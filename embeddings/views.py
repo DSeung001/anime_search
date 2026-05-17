@@ -31,7 +31,8 @@ from catalog.models import Anime, Genre
 from embeddings.api_reference import path_help_payload
 from embeddings.job_fields import extra_embedding_job_fields_from_json
 from embeddings.models import EmbeddingJob
-from embeddings.services.job_dispatch import JobDispatchError, enqueue_process_next, enqueue_run_job
+from embeddings.services.job_auto_enqueue import schedule_auto_enqueue_on_commit
+from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
 from embeddings.services.job_staging import ensure_job_staging_dirs
 from embeddings.validation import is_valid_anime_id
 
@@ -127,6 +128,7 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
 
     job = EmbeddingJob.objects.create(anime=anime, **extra)
     staging_leaf = ensure_job_staging_dirs(job)
+    schedule_auto_enqueue_on_commit(job.public_id)
 
     genre_slugs = list(anime.genres.order_by("slug").values_list("slug", flat=True))
     payload: dict[str, Any] = {
@@ -202,6 +204,7 @@ def requeue_embedding_job(request: HttpRequest, public_id: UUID) -> JsonResponse
         ]
     )
     ensure_job_staging_dirs(job)
+    schedule_auto_enqueue_on_commit(job.public_id)
     return JsonResponse({"public_id": str(job.public_id), "status": job.status})
 
 
@@ -224,29 +227,6 @@ def run_embedding_job_by_id(request: HttpRequest, public_id: UUID) -> JsonRespon
             "public_id": result.public_id,
             "celery_task_id": result.celery_task_id,
             "status": result.status,
-        },
-        status=202,
-    )
-
-
-@csrf_exempt
-@require_POST
-def run_next_embedding_job(request: HttpRequest) -> JsonResponse:
-    """큐에서 다음 pending 한 건을 Celery로 처리."""
-    if not _embed_allowed(request):
-        return JsonResponse({"detail": "forbidden"}, status=403)
-
-    try:
-        result = enqueue_process_next()
-    except Exception as exc:  # noqa: BLE001
-        return JsonResponse({"detail": str(exc)}, status=503)
-    if result is None:
-        return JsonResponse({"enqueued": False, "processed": False})
-    return JsonResponse(
-        {
-            "enqueued": True,
-            "processed": True,
-            "celery_task_id": result.celery_task_id,
         },
         status=202,
     )

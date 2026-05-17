@@ -39,20 +39,13 @@ def run_embedding_job_task(public_id: str) -> dict[str, str]:
     )
 
     try:
-        if job.status not in (
-            EmbeddingJob.Status.PROCESSING,
-            EmbeddingJob.Status.PENDING,
-        ):
+        if job.status != EmbeddingJob.Status.PROCESSING:
             logger.warning(
                 "embedding job skip unexpected status public_id=%s status=%s",
                 public_id,
                 job.status,
             )
             return {"public_id": public_id, "status": job.status}
-
-        if job.status == EmbeddingJob.Status.PENDING:
-            job.status = EmbeddingJob.Status.PROCESSING
-            job.save(update_fields=["status", "updated_at"])
 
         staging_err = check_job_staging_ready(job)
         if staging_err:

@@ -16,7 +16,6 @@ urlpatterns = [
     ),
     path("jobs/", views.job_console, name="catalog_jobs"),
     path("jobs/api/jobs/", views.job_api_list, name="catalog_job_api_list"),
-    path("jobs/api/run-next/", views.job_api_run_next, name="catalog_job_api_run_next"),
     path("jobs/api/run/<uuid:public_id>/", views.job_api_run, name="catalog_job_api_run"),
     path(
         "jobs/api/jobs/<uuid:public_id>/delete/",

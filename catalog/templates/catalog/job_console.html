@@ -4,28 +4,19 @@
 {% block main %}
 <div
   id="job-console-root"
-  data-run-next-url="{% url 'catalog_job_api_run_next' %}"
   data-run-job-url-template="{% url 'catalog_job_api_run' public_id='00000000-0000-0000-0000-000000000000' %}"
   data-job-list-url="{% url 'catalog_job_api_list' %}"
   data-delete-job-url-template="{% url 'catalog_job_api_delete' public_id='00000000-0000-0000-0000-000000000000' %}"
   data-csrf-token="{{ csrf_token }}"
 >
-<h1 class="page-title">잡·워커 <span class="help-tip" tabindex="0" role="note" aria-label="Celery 워커가 대기열 잡을 비동기 처리합니다. Redis와 celery worker가 실행 중이어야 합니다." data-tooltip="Celery 워커가 대기열 잡을 비동기 처리합니다. Redis와 celery worker가 실행 중이어야 합니다.">?</span></h1>
+<h1 class="page-title">잡·워커 <span class="help-tip" tabindex="0" role="note" aria-label="잡 생성·재큐 시 자동으로 Celery 큐에 넣습니다. Redis와 celery worker가 실행 중이어야 합니다." data-tooltip="잡 생성·재큐 시 자동으로 Celery 큐에 넣습니다. Redis와 celery worker가 실행 중이어야 합니다.">?</span></h1>
 {% if messages %}
 <div class="msg-wrap">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>
 {% endif %}
 <div id="job-console-msg" class="job-console-flash" aria-live="polite"></div>
 
 <section class="card">
-  <h2>실행 <span class="help-tip" tabindex="0" role="note" aria-label="다음 pending 잡 한 건을 Celery 큐에 넣습니다." data-tooltip="다음 pending 잡 한 건을 Celery 큐에 넣습니다.">?</span></h2>
-  <form id="form-run-next" class="job-run-form" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-primary">다음 잡 처리</button>
-  </form>
-</section>
-
-<section class="card">
-  <h2>특정 잡 실행 <span class="help-tip" tabindex="0" role="note" aria-label="pending 상태인 UUID 잡을 Celery에 넣습니다." data-tooltip="pending 상태인 UUID 잡을 Celery에 넣습니다.">?</span></h2>
+  <h2>수동 실행 <span class="help-tip" tabindex="0" role="note" aria-label="동영상을 나중에 넣었거나 자동 enqueue가 스킵된 pending 잡을 Celery에 넣습니다." data-tooltip="동영상을 나중에 넣었거나 자동 enqueue가 스킵된 pending 잡을 Celery에 넣습니다.">?</span></h2>
   <form id="form-run-job" class="form-grid cols-2 job-run-form" style="align-items:end;">
     {% csrf_token %}
     <div>
@@ -37,7 +28,7 @@
 </section>
 
 <section class="card">
-  <h2>재큐 <span class="help-tip" tabindex="0" role="note" aria-label="완료·실패 잡을 다시 pending으로 돌립니다. processing은 불가." data-tooltip="완료·실패 잡을 다시 pending으로 돌립니다. processing은 불가.">?</span></h2>
+  <h2>재큐 <span class="help-tip" tabindex="0" role="note" aria-label="완료·실패 잡을 pending으로 되돌린 뒤 자동으로 Celery에 넣습니다. processing은 불가." data-tooltip="완료·실패 잡을 pending으로 되돌린 뒤 자동으로 Celery에 넣습니다. processing은 불가.">?</span></h2>
   <form method="post" class="form-grid cols-2" style="align-items:end;">
     {% csrf_token %}
     <input type="hidden" name="action" value="requeue">

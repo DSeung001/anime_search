@@ -6,7 +6,6 @@ from . import views
 
 urlpatterns = [
     path("api/embed/run/", views.run_embed, name="embeddings_run"),
-    path("api/embed/jobs/run-next/", views.run_next_embedding_job, name="embeddings_run_next"),
     path("api/embed/jobs/", views.create_embedding_job, name="embeddings_job_create"),
     path(
         "api/embed/jobs/<uuid:public_id>/requeue/",

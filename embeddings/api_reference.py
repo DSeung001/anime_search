@@ -45,7 +45,7 @@ def endpoint_catalog() -> list[dict[str, Any]]:
         {
             "method": "POST",
             "path": "/api/embed/jobs/",
-            "summary": "비동기 임베딩 작업 생성. pending 행 + 스테이징 디렉터리 준비.",
+            "summary": "비동기 임베딩 작업 생성. pending 행 + 스테이징 디렉터리 준비 후 Celery 자동 enqueue.",
             "body": {
                 "anime_id": "my_show",
                 "episode": 3,
@@ -54,6 +54,7 @@ def endpoint_catalog() -> list[dict[str, Any]]:
             "notes": [
                 "anime_id 필수(시리즈 슬러그). episode 선택. genre_slugs 는 선택·JSON 문자열 배열이며 있으면 해당 Anime 장르 M2M을 덮어씀.",
                 "장르·시리즈·화 메타는 Qdrant payload에 비정규화되며, 검색 시 선택 필터로 쓰인다.",
+                "스테이징에 JPG 또는 input/ 동영상이 있으면 커밋 후 Celery에 자동 enqueue. 없으면 pending 유지.",
             ],
             "response": "public_id, staging_rel_path, canonical_key, status, episode, genres (slug 배열, DEBUG 시 절대 경로 힌트)",
         },
@@ -66,17 +67,12 @@ def endpoint_catalog() -> list[dict[str, Any]]:
         {
             "method": "POST",
             "path": "/api/embed/jobs/<uuid>/requeue/",
-            "summary": "done/failed → pending.",
+            "summary": "done/failed → pending 후 Celery 자동 enqueue.",
         },
         {
             "method": "POST",
             "path": "/api/embed/jobs/<uuid>/run/",
-            "summary": "pending 잡 한 건 Celery 비동기 실행(202).",
-        },
-        {
-            "method": "POST",
-            "path": "/api/embed/jobs/run-next/",
-            "summary": "대기열에서 다음 pending 한 건 Celery 비동기 처리(202).",
+            "summary": "pending 잡 수동 Celery enqueue(202). 스테이징 준비 후 재시도용.",
         },
         {
             "method": "POST",
@@ -101,12 +97,10 @@ def endpoint_catalog() -> list[dict[str, Any]]:
 def worker_cli_catalog() -> dict[str, Any]:
     return {
         "commands": [
-            "python manage.py process_embedding_jobs",
-            "python manage.py process_embedding_jobs --loop",
-            "python manage.py run_embedding_job <uuid>",
+            "celery -A anime_search worker -l info",
             "python manage.py extract_video_frames <file> --output-dir … | --staging-job-uuid …",
         ],
-        "note": "워커·runserver 모두 같은 ANIME_DATA_ROOT(미설정 시 프로젝트/data)를 씁니다.",
+        "note": "임베딩 잡 실행은 Celery worker. 워커·runserver 모두 같은 ANIME_DATA_ROOT(미설정 시 프로젝트/data)를 씁니다.",
     }
 
 

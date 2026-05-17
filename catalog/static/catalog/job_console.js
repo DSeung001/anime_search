@@ -10,7 +10,6 @@
   var root = document.getElementById("job-console-root");
   if (!root) return;
 
-  var runNextUrl = root.getAttribute("data-run-next-url");
   var runJobUrlTemplate = root.getAttribute("data-run-job-url-template");
   var jobListUrl = root.getAttribute("data-job-list-url");
   var deleteJobUrlTemplate = root.getAttribute("data-delete-job-url-template");
@@ -299,44 +298,6 @@
       });
   }
 
-  function onRunNext(ev) {
-    ev.preventDefault();
-    var btn = ev.target.querySelector('button[type="submit"]');
-    if (btn) btn.disabled = true;
-    setMessage("큐에 넣는 중…", "info");
-
-    fetchJson(runNextUrl, { method: "POST", body: "{}" })
-      .then(function (result) {
-        if (btn) btn.disabled = false;
-        if (!result.ok && result.status !== 200) {
-          setMessage(result.body.detail || "실행 요청 실패", "error");
-          return;
-        }
-        if (result.body.enqueued === false) {
-          setMessage(result.body.detail || "대기 중인 작업이 없습니다.", "info");
-          return;
-        }
-        var publicId = result.body.public_id;
-        if (publicId) {
-          var row = rowForPublicId(publicId);
-          if (row) {
-            updateRow(row, {
-              public_id: publicId,
-              status: "processing",
-              status_display: statusLabels.processing,
-              last_error: "",
-            });
-          }
-        }
-        setMessage("워커에 넣었습니다.", "success");
-        startListPolling();
-      })
-      .catch(function () {
-        if (btn) btn.disabled = false;
-        setMessage("네트워크 오류", "error");
-      });
-  }
-
   function onRunJob(ev) {
     ev.preventDefault();
     var form = ev.target;
@@ -375,9 +336,6 @@
         setMessage("네트워크 오류", "error");
       });
   }
-
-  var formRunNext = document.getElementById("form-run-next");
-  if (formRunNext) formRunNext.addEventListener("submit", onRunNext);
 
   var formRunJob = document.getElementById("form-run-job");
   if (formRunJob) formRunJob.addEventListener("submit", onRunJob);

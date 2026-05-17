@@ -171,30 +171,3 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
     job.last_error = ""
     job.processed_at = timezone.now()
     job.save(update_fields=["status", "last_error", "processed_at", "updated_at"])
-
-
-def process_next_pending_job() -> bool:
-    """
-    pending 작업 하나를 처리한다. 성공 시 True, 처리할 것이 없으면 False.
-    """
-    with transaction.atomic():
-        job = (
-            EmbeddingJob.objects.select_related("anime")
-            .select_for_update()
-            .filter(status=EmbeddingJob.Status.PENDING)
-            .order_by("created_at")
-            .first()
-        )
-        if job is None:
-            return False
-        job.status = EmbeddingJob.Status.PROCESSING
-        job.save(update_fields=["status", "updated_at"])
-
-    try:
-        run_single_embedding_job(job)
-    except Exception as exc:  # noqa: BLE001
-        job.status = EmbeddingJob.Status.FAILED
-        job.last_error = str(exc)[:4000]
-        job.save(update_fields=["status", "last_error", "updated_at"])
-
-    return True

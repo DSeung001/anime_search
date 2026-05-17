@@ -9,11 +9,7 @@ from anime_indexing.paths import ensure_dir, staging_frames_leaf, staging_input_
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
-from embeddings.services.job_dispatch import (
-    JobDispatchError,
-    enqueue_process_next,
-    enqueue_run_job,
-)
+from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
 from embeddings.services.job_preflight import check_job_staging_ready
 from embeddings.services.job_staging import ensure_job_staging_dirs
 from embeddings.tasks import run_embedding_job_task
@@ -96,26 +92,6 @@ class EnqueueRunJobTests(TestCase):
         with self.assertRaises(JobDispatchError) as ctx:
             enqueue_run_job(job.public_id)
         self.assertEqual(ctx.exception.status_code, 400)
-
-
-@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
-class EnqueueProcessNextTests(TestCase):
-    def setUp(self) -> None:
-        self.anime = Anime.objects.create(slug="next_show", title="Next")
-
-    def test_enqueue_returns_public_id(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
-        _staging_with_jpg(job)
-        with patch("embeddings.tasks.run_single_embedding_job"):
-            result = enqueue_process_next()
-        self.assertIsNotNone(result)
-        assert result is not None
-        self.assertEqual(result.public_id, str(job.public_id))
-        job.refresh_from_db()
-        self.assertEqual(job.status, EmbeddingJob.Status.PROCESSING)
-
-    def test_enqueue_none_when_no_pending(self) -> None:
-        self.assertIsNone(enqueue_process_next())
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True)

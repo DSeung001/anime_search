@@ -75,34 +75,3 @@ def enqueue_run_job(public_id: UUID) -> EnqueueResult:
         celery_task_id=task_id,
         status=job.status,
     )
-
-
-def enqueue_process_next() -> EnqueueResult | None:
-    """
-    가장 오래된 pending 잡을 claim 후 Celery 단건 태스크로 실행한다.
-    """
-    from embeddings.tasks import run_embedding_job_task
-
-    with transaction.atomic():
-        job = (
-            EmbeddingJob.objects.select_for_update()
-            .filter(status=EmbeddingJob.Status.PENDING)
-            .order_by("created_at")
-            .first()
-        )
-        if job is None:
-            return None
-        ensure_job_staging_dirs(job)
-        _require_staging_ready(job)
-        job.status = EmbeddingJob.Status.PROCESSING
-        job.last_error = ""
-        job.save(update_fields=["status", "last_error", "updated_at"])
-        public_id = str(job.public_id)
-
-    async_result = run_embedding_job_task.delay(public_id)
-    task_id = _save_task_id(job, async_result)
-    return EnqueueResult(
-        public_id=public_id,
-        celery_task_id=task_id,
-        status=job.status,
-    )

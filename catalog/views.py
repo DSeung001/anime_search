@@ -27,7 +27,8 @@ from catalog.services.genre_slug import unique_genre_slug
 from catalog.services.label_ko import parse_label_ko_bulk
 from embeddings.models import EmbeddingJob
 from embeddings.services.job_delete import JobDeleteError, delete_embedding_job
-from embeddings.services.job_dispatch import JobDispatchError, enqueue_process_next, enqueue_run_job
+from embeddings.services.job_auto_enqueue import schedule_auto_enqueue_on_commit
+from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
 from embeddings.services.job_staging import ensure_job_staging_dirs
 from embeddings.validation import is_valid_anime_id
 
@@ -255,6 +256,8 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                 for chunk in f.chunks():
                     out.write(chunk)
 
+        schedule_auto_enqueue_on_commit(job.public_id)
+
         if _wants_json(request):
             payload: dict[str, str | None] = {
                 "public_id": str(job.public_id),
@@ -263,15 +266,24 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                 "jobs_url": request.build_absolute_uri(reverse("catalog_jobs")),
             }
             if dest_name:
-                payload["message"] = f"작업 생성됨 · {job.public_id} · 동영상 저장됨"
+                payload["message"] = f"작업 생성됨 · {job.public_id} · 동영상 저장됨 · 처리 큐에 넣는 중"
             else:
-                payload["message"] = f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣으세요"
+                payload["message"] = (
+                    f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣은 뒤 "
+                    f"/jobs/ 에서 실행하세요"
+                )
             return JsonResponse(payload)
 
         if dest_name:
-            messages.success(request, f"작업 생성됨 · {job.public_id} · 동영상 저장됨")
+            messages.success(
+                request,
+                f"작업 생성됨 · {job.public_id} · 동영상 저장됨 · 처리 큐에 넣는 중",
+            )
         else:
-            messages.success(request, f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣으세요")
+            messages.success(
+                request,
+                f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣은 뒤 /jobs/ 에서 실행하세요",
+            )
         return redirect("catalog_jobs")
 
     return render(
@@ -303,28 +315,6 @@ def job_api_list(request: HttpRequest) -> HttpResponse:
         return gate
     jobs = EmbeddingJob.objects.select_related("anime").order_by("-created_at")[:80]
     return JsonResponse({"jobs": [_job_status_payload(j) for j in jobs]})
-
-
-@require_POST
-def job_api_run_next(request: HttpRequest) -> HttpResponse:
-    gate = _ui_gate(request)
-    if gate:
-        return gate
-    try:
-        result = enqueue_process_next()
-    except Exception as exc:  # noqa: BLE001
-        return JsonResponse({"detail": str(exc)}, status=503)
-    if result is None:
-        return JsonResponse({"enqueued": False, "detail": "대기 중인 작업이 없습니다."}, status=200)
-    return JsonResponse(
-        {
-            "enqueued": True,
-            "public_id": result.public_id,
-            "celery_task_id": result.celery_task_id,
-            "status": result.status,
-        },
-        status=202,
-    )
 
 
 @require_POST
@@ -400,7 +390,8 @@ def job_console(request: HttpRequest) -> HttpResponse:
                 ]
             )
             ensure_job_staging_dirs(job)
-            messages.success(request, "다시 대기열에 넣었습니다.")
+            schedule_auto_enqueue_on_commit(job.public_id)
+            messages.success(request, "다시 대기열에 넣었습니다. 처리 큐에 넣는 중입니다.")
             return redirect("catalog_jobs")
 
     jobs = list(EmbeddingJob.objects.select_related("anime").order_by("-created_at")[:80])
