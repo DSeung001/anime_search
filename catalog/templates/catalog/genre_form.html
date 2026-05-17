@@ -1,0 +1,33 @@
+{% extends "catalog/base.html" %}
+{% block title %}{% if genre %}장르 수정{% else %}장르 추가{% endif %}{% endblock %}
+{% block main %}
+<h1 class="page-title">{% if genre %}장르 수정{% else %}장르 추가{% endif %}</h1>
+{% if messages %}
+<div class="msg-wrap">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+{% endif %}
+<section class="card">
+  <form method="post" class="form-grid cols-2">
+    {% csrf_token %}
+    {% if genre %}
+    <div>
+      <label class="f">slug <span class="help-tip" tabindex="0" role="note" aria-label="저장 후에는 바꾸지 않습니다. Qdrant·API 필터 키입니다." data-tooltip="저장 후에는 바꾸지 않습니다. Qdrant·API 필터 키입니다.">?</span></label>
+      <p style="margin:0;font-size:0.92rem;"><code>{{ genre.slug }}</code></p>
+    </div>
+    {% else %}
+    <p class="hint" style="grid-column:1/-1;margin:0 0 0.5rem;">저장 시 영문 slug 가 자동으로 부여됩니다 (한글만 있으면 <code>g-xxxxxxxx</code> 형식).</p>
+    {% endif %}
+    <div>
+      <label class="f">표시명 (한글) <span class="help-tip" tabindex="0" role="note" aria-label="관리 화면에만 보이는 이름입니다." data-tooltip="관리 화면에만 보이는 이름입니다.">?</span></label>
+      <input type="text" name="label_ko" required value="{{ genre.label_ko|default:'' }}" maxlength="255">
+    </div>
+    <div>
+      <label class="f">정렬 순서 <span class="help-tip" tabindex="0" role="note" aria-label="작을수록 목록 위쪽." data-tooltip="작을수록 목록 위쪽.">?</span></label>
+      <input type="number" name="sort_order" value="{{ genre.sort_order|default:0 }}" min="0" step="1">
+    </div>
+    <div style="grid-column:1/-1;">
+      <button type="submit" class="btn btn-primary">저장</button>
+      <a href="{% url 'catalog_genre_list' %}" class="btn btn-ghost">목록</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

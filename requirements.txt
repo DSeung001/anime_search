@@ -1,0 +1,20 @@
+# Django
+Django>=6.0,<7
+
+# 비동기 잡 큐 (broker/result: Redis)
+celery>=5.3,<6
+redis>=5.0,<6
+
+# CLIP 파이프라인 (GPU/CPU)
+torch>=2.0
+torchvision>=0.15
+numpy>=1.24
+Pillow>=10.0
+# OpenAI CLIP (`import clip`) — PyPI 패키지명이 아님, GitHub에서 설치
+git+https://github.com/openai/CLIP.git
+
+# 벡터 DB (Qdrant 클라이언트; 검색·업서트에 필요)
+qdrant-client>=1.7
+
+# 동영상 → 프레임 (시스템 ffmpeg 없이 동봉 바이너리 사용)
+imageio-ffmpeg>=0.5

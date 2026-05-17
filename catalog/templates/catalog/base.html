@@ -1,0 +1,26 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}애니 벡터{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'embeddings/embed.css' %}">
+</head>
+<body class="embed-body">
+<header class="top">
+  <div class="top-inner">
+    <div class="top-start"><span class="brand">애니 벡터 검색</span></div>
+    <nav class="nav" aria-label="주요 메뉴">
+      <a href="{% url 'catalog_genre_list' %}">장르</a>
+      <a href="{% url 'catalog_anime_upload' %}">업로드</a>
+      <a href="{% url 'catalog_jobs' %}">잡</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+{% block main %}{% endblock %}
+</main>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

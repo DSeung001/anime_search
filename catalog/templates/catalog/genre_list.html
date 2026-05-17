@@ -1,0 +1,44 @@
+{% extends "catalog/base.html" %}
+{% block title %}장르 목록{% endblock %}
+{% block main %}
+<h1 class="page-title">장르 <a href="{% url 'catalog_genre_new' %}" class="btn btn-primary" style="margin-left:0.5rem;font-size:0.85rem;">단건 추가</a></h1>
+{% if messages %}
+<div class="msg-wrap">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+{% endif %}
+
+<section class="card">
+  <h2>여러 장르 한 번에 등록</h2>
+  <p class="hint" style="margin:0 0 0.75rem;">한 줄에 하나, 또는 쉼표(,)로 구분해 입력하세요. 이미 있는 한글 표시명은 건너뜁니다.</p>
+  <form method="post" action="{% url 'catalog_genre_bulk_new' %}" class="form-grid cols-2">
+    {% csrf_token %}
+    <div style="grid-column:1/-1;">
+      <label class="f">표시명 (한글)</label>
+      <textarea name="labels_bulk" rows="6" maxlength="8000" placeholder="액션, 로맨스, SF&#10;또는 줄마다 하나씩" required></textarea>
+    </div>
+    <div>
+      <label class="f">정렬 순서 (공통)</label>
+      <input type="number" name="sort_order" value="0" min="0" step="1">
+    </div>
+    <div style="grid-column:1/-1;">
+      <button type="submit" class="btn btn-primary">일괄 등록</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <table>
+    <thead><tr><th>표시명</th><th>순서</th><th></th></tr></thead>
+    <tbody>
+      {% for g in genres %}
+      <tr>
+        <td>{{ g.label_ko }}</td>
+        <td>{{ g.sort_order }}</td>
+        <td><a href="{% url 'catalog_genre_edit' g.pk %}">수정</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="3" class="empty">등록된 장르가 없습니다.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

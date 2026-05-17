@@ -1,0 +1,89 @@
+{% extends "catalog/base.html" %}
+{% load static %}
+{% block title %}잡·워커{% endblock %}
+{% block main %}
+<div
+  id="job-console-root"
+  data-run-next-url="{% url 'catalog_job_api_run_next' %}"
+  data-run-job-url-template="{% url 'catalog_job_api_run' public_id='00000000-0000-0000-0000-000000000000' %}"
+  data-job-list-url="{% url 'catalog_job_api_list' %}"
+  data-delete-job-url-template="{% url 'catalog_job_api_delete' public_id='00000000-0000-0000-0000-000000000000' %}"
+  data-csrf-token="{{ csrf_token }}"
+>
+<h1 class="page-title">잡·워커 <span class="help-tip" tabindex="0" role="note" aria-label="Celery 워커가 대기열 잡을 비동기 처리합니다. Redis와 celery worker가 실행 중이어야 합니다." data-tooltip="Celery 워커가 대기열 잡을 비동기 처리합니다. Redis와 celery worker가 실행 중이어야 합니다.">?</span></h1>
+{% if messages %}
+<div class="msg-wrap">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+{% endif %}
+<div id="job-console-msg" class="job-console-flash" aria-live="polite"></div>
+
+<section class="card">
+  <h2>실행 <span class="help-tip" tabindex="0" role="note" aria-label="다음 pending 잡 한 건을 Celery 큐에 넣습니다." data-tooltip="다음 pending 잡 한 건을 Celery 큐에 넣습니다.">?</span></h2>
+  <form id="form-run-next" class="job-run-form" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">다음 잡 처리</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>특정 잡 실행 <span class="help-tip" tabindex="0" role="note" aria-label="pending 상태인 UUID 잡을 Celery에 넣습니다." data-tooltip="pending 상태인 UUID 잡을 Celery에 넣습니다.">?</span></h2>
+  <form id="form-run-job" class="form-grid cols-2 job-run-form" style="align-items:end;">
+    {% csrf_token %}
+    <div>
+      <label class="f" for="jid">public_id (UUID)</label>
+      <input id="jid" type="text" name="job_public_id" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+    </div>
+    <div><button type="submit" class="btn btn-ghost">이 잡 실행</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>재큐 <span class="help-tip" tabindex="0" role="note" aria-label="완료·실패 잡을 다시 pending으로 돌립니다. processing은 불가." data-tooltip="완료·실패 잡을 다시 pending으로 돌립니다. processing은 불가.">?</span></h2>
+  <form method="post" class="form-grid cols-2" style="align-items:end;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="requeue">
+    <div>
+      <label class="f" for="rq">public_id</label>
+      <input id="rq" type="text" name="job_public_id" required>
+    </div>
+    <div><button type="submit" class="btn btn-ghost">pending 복귀</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>최근 작업</h2>
+  <div class="table-wrap">
+    <table id="jobs-table">
+      <thead><tr><th>시리즈</th><th>public_id</th><th>상태</th><th>화</th><th>생성</th><th>오류</th><th>작업</th></tr></thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr
+          data-public-id="{{ j.public_id }}"
+          data-status="{{ j.status }}"
+          class="job-row job-row--{{ j.status }}"
+        >
+          <td><strong>{{ j.anime.slug }}</strong></td>
+          <td><code class="tiny">{{ j.public_id }}</code></td>
+          <td><span class="badge job-status-badge badge-{{ j.status }}">{{ j.get_status_display }}</span></td>
+          <td>{{ j.episode|default:"—" }}</td>
+          <td style="font-size:0.82rem;color:var(--muted);">{{ j.created_at|date:"Y-m-d H:i" }}</td>
+          <td class="errcell job-error-cell">{% if j.last_error %}<span class="job-error-text" title="{{ j.last_error }}">{{ j.last_error|truncatechars:40 }}</span>{% else %}—{% endif %}</td>
+          <td>
+            <button
+              type="button"
+              class="btn btn-ghost btn-mini job-delete-btn"
+              data-public-id="{{ j.public_id }}"
+            >삭제</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="empty">작업 없음</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'catalog/job_console.js' %}"></script>
+{% endblock %}

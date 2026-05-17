@@ -1,0 +1,187 @@
+{% extends "catalog/base.html" %}
+{% block title %}애니 업로드{% endblock %}
+{% block main %}
+<h1 class="page-title">애니 업로드 <span class="help-tip" tabindex="0" role="note" aria-label="시리즈(Anime)를 지정하고 장르를 연결한 뒤 동영상을 올리면 EmbeddingJob이 생성됩니다." data-tooltip="시리즈(Anime)를 지정하고 장르를 연결한 뒤 동영상을 올리면 EmbeddingJob이 생성됩니다.">?</span></h1>
+{% if messages %}
+<div class="msg-wrap">{% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+{% endif %}
+
+<section class="card">
+  <form id="upload-form" method="post" enctype="multipart/form-data" class="form-grid cols-2" action="{% url 'catalog_anime_upload' %}">
+    {% csrf_token %}
+    <div>
+      <label class="f">시리즈 slug</label>
+      <input type="text" name="anime_slug" required pattern="[a-zA-Z0-9_-]{1,255}" list="anime-slugs" autocomplete="off">
+      <datalist id="anime-slugs">{% for a in animes %}<option value="{{ a.slug }}">{{ a.slug }}</option>{% endfor %}</datalist>
+    </div>
+    <div>
+      <label class="f">표시 제목 (선택)</label>
+      <input type="text" name="title" maxlength="512" placeholder="option">
+    </div>
+    <div style="grid-column:1/-1;">
+      <label class="f">장르</label>
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;">
+        {% for g in genres %}
+        <label><input type="checkbox" name="genre_ids" value="{{ g.pk }}"> {{ g.label_ko }}</label>
+        {% empty %}<span class="hint">먼저 장르 메뉴에서 장르를 추가하세요.</span>{% endfor %}
+      </div>
+    </div>
+    <div>
+      <label class="f">episode (선택)</label>
+      <input type="number" name="episode" min="1" step="1" placeholder="특정 화">
+    </div>
+    <div style="grid-column:1/-1;">
+      <label class="f">동영상 (선택)</label>
+      <div id="video-picker" class="video-picker" data-state="empty">
+        <input id="video-input" class="video-picker-input" type="file" name="video" accept=".mp4,.mkv,.webm,.mov,.avi,.m4v,video/*">
+        <div id="video-drop" class="drop video-picker-drop">
+          <strong id="video-drop-label">파일 선택</strong>
+          <span id="video-drop-hint">또는 여기로 드래그</span>
+        </div>
+        <div id="video-file-picked" class="file-picked video-picker-picked">
+          <span class="file-picked-badge">선택됨</span>
+          <span id="video-file-name" class="file-picked-name"></span>
+          <span id="video-file-meta" class="file-picked-meta"></span>
+          <button type="button" id="video-file-clear" class="btn btn-ghost file-picked-clear">선택 해제</button>
+        </div>
+      </div>
+    </div>
+    <div id="upload-progress-wrap" class="upload-progress-wrap" hidden style="grid-column:1/-1;">
+      <label class="f">업로드</label>
+      <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="upload-progress-bar" class="progress-bar"></div>
+      </div>
+      <p id="upload-progress-label" class="hint" style="margin:0.35rem 0 0;">0%</p>
+    </div>
+    <div style="grid-column:1/-1;">
+      <button id="upload-submit" type="submit" class="btn btn-primary">작업 생성</button>
+      <a href="{% url 'catalog_jobs' %}" class="btn btn-ghost">잡 목록</a>
+    </div>
+  </form>
+</section>
+
+<section id="upload-result" class="card" hidden>
+  <h2>업로드 결과</h2>
+  <p id="upload-result-msg" class="hint"></p>
+  <p><code id="upload-result-id"></code></p>
+  <video id="upload-preview" controls playsinline style="width:100%;max-height:480px;margin-top:0.75rem;background:#000;border-radius:var(--radius);"></video>
+  <p class="hint" style="margin-top:0.75rem;">잡 처리를 시작하면 스테이징 동영상이 삭제되어 미리보기가 사라질 수 있습니다.</p>
+</section>
+
+<script>
+(function () {
+  const ALLOWED_EXT = [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"];
+  const form = document.getElementById("upload-form");
+  const videoPicker = document.getElementById("video-picker");
+  const videoInput = document.getElementById("video-input");
+  const filePicked = document.getElementById("video-file-picked");
+  const fileNameEl = document.getElementById("video-file-name");
+  const fileMetaEl = document.getElementById("video-file-meta");
+  const fileClearBtn = document.getElementById("video-file-clear");
+  const progressWrap = document.getElementById("upload-progress-wrap");
+  const progressBar = document.getElementById("upload-progress-bar");
+  const progressLabel = document.getElementById("upload-progress-label");
+  const progressTrack = progressWrap.querySelector(".progress-track");
+  const submitBtn = document.getElementById("upload-submit");
+  const resultSection = document.getElementById("upload-result");
+  const resultMsg = document.getElementById("upload-result-msg");
+  const resultId = document.getElementById("upload-result-id");
+  const preview = document.getElementById("upload-preview");
+
+  function setProgress(pct) {
+    const v = Math.max(0, Math.min(100, pct));
+    progressBar.style.width = v + "%";
+    progressLabel.textContent = Math.round(v) + "%";
+    progressTrack.setAttribute("aria-valuenow", String(Math.round(v)));
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  }
+
+  function extOf(name) {
+    const i = name.lastIndexOf(".");
+    return i >= 0 ? name.slice(i).toLowerCase() : "";
+  }
+
+  function updateVideoPickUI() {
+    const file = videoInput.files && videoInput.files[0];
+    if (!file) {
+      videoPicker.dataset.state = "empty";
+      filePicked.classList.remove("file-picked--warn");
+      fileNameEl.textContent = "";
+      fileMetaEl.textContent = "";
+      return;
+    }
+    const ext = extOf(file.name);
+    const ok = ALLOWED_EXT.indexOf(ext) >= 0;
+    videoPicker.dataset.state = "picked";
+    fileNameEl.textContent = file.name;
+    fileMetaEl.textContent = formatBytes(file.size) + (ok ? "" : " · 지원하지 않는 확장자");
+    filePicked.classList.toggle("file-picked--warn", !ok);
+  }
+
+  videoInput.addEventListener("change", updateVideoPickUI);
+  fileClearBtn.addEventListener("click", function () {
+    videoInput.value = "";
+    updateVideoPickUI();
+  });
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", form.action);
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+    xhr.setRequestHeader("Accept", "application/json");
+
+    progressWrap.hidden = false;
+    setProgress(0);
+    submitBtn.disabled = true;
+
+    xhr.upload.addEventListener("progress", function (e) {
+      if (e.lengthComputable) {
+        setProgress((e.loaded / e.total) * 100);
+      }
+    });
+
+    xhr.addEventListener("load", function () {
+      submitBtn.disabled = false;
+      let data;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch (_) {
+        alert("서버 응답을 해석할 수 없습니다.");
+        return;
+      }
+      if (xhr.status >= 400) {
+        alert(data.detail || data.message || "업로드 실패");
+        return;
+      }
+      setProgress(100);
+      resultSection.hidden = false;
+      resultMsg.textContent = data.message || "작업이 생성되었습니다.";
+      resultId.textContent = data.public_id || "";
+      if (data.preview_url) {
+        preview.hidden = false;
+        preview.src = data.preview_url;
+      } else {
+        preview.hidden = true;
+        preview.removeAttribute("src");
+      }
+      resultSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+
+    xhr.addEventListener("error", function () {
+      submitBtn.disabled = false;
+      alert("네트워크 오류로 업로드에 실패했습니다.");
+    });
+
+    xhr.send(fd);
+  });
+})();
+</script>
+{% endblock %}

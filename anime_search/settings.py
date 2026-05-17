@@ -10,10 +10,53 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _path_from_env(name: str, default: Path) -> Path:
+    raw = os.environ.get(name, "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return default.resolve()
+
+
+# --- 로컬 디스크 (환경변수는 ANIME_DATA_ROOT 하나만; 하위 경로는 고정)
+#   {ANIME_DATA_ROOT}/staging/jobs/<job-uuid>/input|frames  — 업로드·작업 중
+#   {ANIME_DATA_ROOT}/media/{anime-slug}/frames/            — 잡 완료 후 JPG
+# 프로덕션에서 볼륨을 나누려면 ANIME_DATA_ROOT만 마운트 지점으로 지정하면 된다.
+ANIME_DATA_ROOT = _path_from_env("ANIME_DATA_ROOT", BASE_DIR / "data")
+ANIME_STAGING_ROOT = (ANIME_DATA_ROOT / "staging").resolve()
+ANIME_MEDIA_ROOT = (ANIME_DATA_ROOT / "media").resolve()
+# 예: "media/" — 로컬 디스크 경로와 1:1이 되도록 버킷 내 prefix를 팀 규칙으로 고정
+S3_MEDIA_PREFIX = os.environ.get("S3_MEDIA_PREFIX", "").strip()
+
+ANIME_EMBED_BATCH_SIZE = int(os.environ.get("ANIME_EMBED_BATCH_SIZE", "64"))
+ANIME_EMBED_NUM_WORKERS = int(os.environ.get("ANIME_EMBED_NUM_WORKERS", "0"))
+
+# DEBUG=False 일 때 동기 임베딩 시험 엔드포인트 보호용 (비어 있으면 해당 뷰는 거부)
+EMBED_INTERNAL_KEY = os.environ.get("EMBED_INTERNAL_KEY", "").strip()
+
+CLIP_MODEL_NAME = os.environ.get("CLIP_MODEL_NAME", "ViT-L/14").strip()
+CLIP_CHECKPOINT = os.environ.get("CLIP_CHECKPOINT", "").strip() or None
+
+# Qdrant 미설정 시 워커는 벡터 적재를 건너뛴다.
+QDRANT_URL = os.environ.get("QDRANT_URL", "").strip()
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "").strip()
+QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "anime_clip").strip()
+
+# --- 동영상 → 프레임 (기본: imageio-ffmpeg 동봉 ffmpeg; 덮어쓰려면 FFMPEG_BIN 절대경로)
+FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "").strip()
+FFPROBE_BIN = os.environ.get("FFPROBE_BIN", "").strip()
+# 비움 또는 0 이하: 전 프레임. 양수: 초당 해당 장(ffmpeg fps 필터).
+_ve_fps_raw = os.environ.get("VIDEO_EXTRACT_FPS", "").strip()
+VIDEO_EXTRACT_FPS = float(_ve_fps_raw) if _ve_fps_raw else 0.0
+# 0 이하 = 장 수 제한 없음(전 프레임 추출 시 디스크·임베딩 비용 주의).
+VIDEO_EXTRACT_MAX_FRAMES = int(os.environ.get("VIDEO_EXTRACT_MAX_FRAMES", "0"))
+VIDEO_EXTRACT_JPEG_Q = int(os.environ.get("VIDEO_EXTRACT_JPEG_Q", "2"))
 
 
 # Quick-start development settings - unsuitable for production
@@ -37,6 +80,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'catalog',
+    'embeddings',
 ]
 
 MIDDLEWARE = [
@@ -115,3 +160,22 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# 대시보드 동영상 업로드 (개발 기본 500MB; 운영은 역프록시·스토리지 정책과 맞출 것)
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("FILE_UPLOAD_MAX_MEMORY_SIZE", str(500 * 1024 * 1024)))
+DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_UPLOAD_MAX_MEMORY_SIZE
+
+LOGIN_URL = "/admin/login/"
+
+# --- Celery (임베딩 잡 비동기 실행)
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0").strip()
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL).strip()
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "3600"))
+CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", "1"))
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+

@@ -4,6 +4,7 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 /media/
+/data/
 /static/
 staticfiles/
 
@@ -21,8 +22,14 @@ requirements.txt.lock
 .idea/
 .vscode/
 *.swp
+.cursorrules
 
 ### OS (macOS) ###
 .DS_Store
 .AppleDouble
 .LSOverride
+
+
+anime_indexing/weights/
+# 또는
+anime_indexing/weights/*
