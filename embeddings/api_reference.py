@@ -34,7 +34,7 @@ def storage_snapshot() -> dict[str, Any]:
             "frames_jpg": "<staging_root>/jobs/<job-uuid>/frames/*.jpg",
             "optional_video": "<staging_root>/jobs/<job-uuid>/input/*.mp4|mkv|webm|mov|avi|m4v",
         },
-        "after_job_done": "<media_root>/<anime_slug>/episodes/<n>/frames/*.jpg",
+        "after_job_done": "<staging_root>/jobs/<job-uuid>/frames/*.jpg (잡 삭제 전까지 유지)",
         "clip_weights_dir": str(CLIP_WEIGHTS_DIR),
         "clip_default_checkpoint": str(DEFAULT_CLIP_CHECKPOINT_PATH),
         "qdrant_indexing": "임베딩 완료 시 JPG 한 장당 Qdrant 포인트 1개(frame_index, timestamp_sec, frame_file payload).",
@@ -55,7 +55,7 @@ def endpoint_catalog() -> list[dict[str, Any]]:
             "notes": [
                 "anime_id 필수(시리즈 슬러그). episode(화수) 필수 — catalog.Episode get_or_create. genre_slugs 는 선택.",
                 "장르·시리즈·화 메타는 Qdrant payload에 비정규화되며, 검색 시 선택 필터로 쓰인다.",
-                "스테이징에 JPG 또는 input/ 동영상이 있으면 커밋 후 Celery에 자동 enqueue. 없으면 pending 유지.",
+                "input/ 에 동영상이 있으면 커밋 후 Celery에 자동 enqueue. 없으면 pending 유지.",
             ],
             "response": "public_id, staging_rel_path, canonical_key, status, episode, genres (slug 배열, DEBUG 시 절대 경로 힌트)",
         },

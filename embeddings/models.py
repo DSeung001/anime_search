@@ -9,8 +9,8 @@ from anime_indexing.paths import canonical_frames_key
 
 class EmbeddingJob(models.Model):
     """
-    비동기 임베딩 작업. 캐논 프레임 경로는
-    `{ANIME_MEDIA_ROOT}/{anime.slug}/episodes/{n}/frames/` (= canonical_key).
+    비동기 임베딩 작업. 프레임 JPG는 스테이징 ``jobs/<public_id>/frames/`` 에 유지.
+    ``canonical_key`` 는 Qdrant·S3 논리 식별자(디스크 경로와 동일하지 않음).
     """
 
     class Status(models.TextChoices):
@@ -34,7 +34,7 @@ class EmbeddingJob(models.Model):
         max_length=512,
         editable=False,
         db_index=True,
-        help_text="디스크·S3 논리 키: `{slug}/episodes/{n}/frames`",
+        help_text="Qdrant·S3 논리 키: `{slug}/episodes/{n}/frames` (JPG는 스테이징에만 저장)",
     )
     staging_rel_path = models.CharField(
         max_length=512,

@@ -20,8 +20,7 @@ from anime_indexing.frame_directory_embedding import (
     run_frame_directory_embedding,
 )
 from anime_indexing.paths import (
-    frames_leaf_under_media,
-    resolve_frames_dir,
+    resolve_staging_frames_dir,
     staging_frames_leaf,
     staging_input_dir_for_job_frames,
 )
@@ -54,7 +53,7 @@ def _json_body(request: HttpRequest) -> dict[str, Any]:
 @csrf_exempt
 @require_POST
 def run_embed(request: HttpRequest) -> JsonResponse:
-    """캐논 미디어 루트 기준 leaf 디렉터리에 대해 동기 임베딩(개발·점검용)."""
+    """스테이징 루트 기준 leaf 디렉터리에 대해 동기 임베딩(개발·점검용)."""
     if not _embed_allowed(request):
         return JsonResponse({"detail": "forbidden"}, status=403)
 
@@ -71,7 +70,7 @@ def run_embed(request: HttpRequest) -> JsonResponse:
         )
 
     try:
-        frames = resolve_frames_dir(rel)
+        frames = resolve_staging_frames_dir(rel)
     except (ValueError, PermissionError) as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
 
@@ -145,9 +144,6 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
     if settings.DEBUG:
         payload["staging_absolute"] = str(staging_leaf)
         payload["staging_input_absolute"] = str(staging_input_dir_for_job_frames(staging_leaf))
-        payload["canonical_frames_absolute"] = str(
-            frames_leaf_under_media(anime.slug, job.episode.number)
-        )
         payload["s3_logical_prefix"] = (settings.S3_MEDIA_PREFIX + job.canonical_key).lstrip("/")
     return JsonResponse(payload, status=201)
 

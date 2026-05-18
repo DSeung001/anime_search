@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -9,7 +8,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from anime_indexing.paths import anime_staging_root, ensure_dir, frames_leaf_under_media
+from anime_indexing.paths import anime_staging_root, ensure_dir
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
@@ -19,10 +18,8 @@ from embeddings.services.job_delete import JobDeleteError, delete_embedding_job
 
 class JobDeleteServiceTests(TestCase):
     def setUp(self) -> None:
-        self._media_tmp = tempfile.TemporaryDirectory()
         self._staging_tmp = tempfile.TemporaryDirectory()
         self.settings_override = override_settings(
-            ANIME_MEDIA_ROOT=self._media_tmp.name,
             ANIME_STAGING_ROOT=self._staging_tmp.name,
         )
         self.settings_override.enable()
@@ -30,7 +27,6 @@ class JobDeleteServiceTests(TestCase):
 
     def tearDown(self) -> None:
         self.settings_override.disable()
-        self._media_tmp.cleanup()
         self._staging_tmp.cleanup()
 
     def _staging_root_for(self, job: EmbeddingJob) -> None:
@@ -58,45 +54,20 @@ class JobDeleteServiceTests(TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertTrue(EmbeddingJob.objects.filter(pk=job.pk).exists())
 
-    def test_delete_done_removes_canonical_when_latest(self) -> None:
+    def test_delete_done_keeps_staging_until_deleted(self) -> None:
         job = make_job(
             self.anime,
             status=EmbeddingJob.Status.DONE,
             processed_at=timezone.now(),
         )
-        leaf = frames_leaf_under_media(self.anime.slug, job.episode.number)
-        ensure_dir(leaf)
-        (leaf / "frame.jpg").write_bytes(b"\xff\xd8\xff")
+        self._staging_root_for(job)
+        staging_jpg = anime_staging_root() / "jobs" / str(job.public_id) / "frames" / "a.jpg"
 
         with patch("embeddings.services.job_delete.delete_points_for_job_public_id"):
             delete_embedding_job(public_id=job.public_id)
 
         self.assertFalse(EmbeddingJob.objects.filter(pk=job.pk).exists())
-        self.assertFalse((leaf / "frame.jpg").exists())
-
-    def test_delete_older_done_keeps_canonical(self) -> None:
-        older_time = timezone.now() - timedelta(hours=2)
-        newer_time = timezone.now() - timedelta(hours=1)
-        older = make_job(
-            self.anime,
-            episode_number=1,
-            status=EmbeddingJob.Status.DONE,
-            processed_at=older_time,
-        )
-        make_job(
-            self.anime,
-            episode_number=1,
-            status=EmbeddingJob.Status.DONE,
-            processed_at=newer_time,
-        )
-        leaf = frames_leaf_under_media(self.anime.slug, older.episode.number)
-        ensure_dir(leaf)
-        (leaf / "frame.jpg").write_bytes(b"\xff\xd8\xff")
-
-        with patch("embeddings.services.job_delete.delete_points_for_job_public_id"):
-            delete_embedding_job(public_id=older.public_id)
-
-        self.assertTrue((leaf / "frame.jpg").exists())
+        self.assertFalse(staging_jpg.exists())
 
     def test_delete_not_found(self) -> None:
         with self.assertRaises(JobDeleteError) as ctx:
@@ -107,10 +78,8 @@ class JobDeleteServiceTests(TestCase):
 @override_settings(DEBUG=True)
 class JobDeleteApiTests(TestCase):
     def setUp(self) -> None:
-        self._media_tmp = tempfile.TemporaryDirectory()
         self._staging_tmp = tempfile.TemporaryDirectory()
         self.settings_override = override_settings(
-            ANIME_MEDIA_ROOT=self._media_tmp.name,
             ANIME_STAGING_ROOT=self._staging_tmp.name,
         )
         self.settings_override.enable()
@@ -119,7 +88,6 @@ class JobDeleteApiTests(TestCase):
 
     def tearDown(self) -> None:
         self.settings_override.disable()
-        self._media_tmp.cleanup()
         self._staging_tmp.cleanup()
 
     def test_api_delete_success(self) -> None:

@@ -21,15 +21,15 @@ urlpatterns = [
     # Job 목록 페이지
     path("jobs/", views.job_console, name="catalog_jobs"),
     # Job JSON API
-    # 목록보기
+    # Job 목록 가져오기
     path("api/jobs/", views.job_api_list, name="catalog_job_api_list"),
-    # 실행하기
+    # Job 실행 요청하기 (워커로 자동으로 수행되는데, 이를 요청도 가능)
     path(
         "api/jobs/<uuid:public_id>/run/",
         views.job_api_run,
         name="catalog_job_api_run",
     ),
-    # 삭제하기
+    # Job 삭제하기
     path(
         "api/jobs/<uuid:public_id>/delete/",
         views.job_api_delete,

@@ -9,7 +9,7 @@ from celery import shared_task
 from anime_indexing.embedding_job_runner import run_single_embedding_job
 
 from embeddings.models import EmbeddingJob
-from embeddings.services.job_preflight import check_job_staging_ready
+from embeddings.services.job_preflight import check_job_input_video
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,10 @@ def run_embedding_job_task(public_id: str) -> dict[str, str]:
             )
             return {"public_id": public_id, "status": job.status}
 
-        staging_err = check_job_staging_ready(job)
-        if staging_err:
-            _mark_failed(job, RuntimeError(staging_err))
+        # enqueue와 동일: input/ 동영상 필수(ffmpeg 추출 전 재검증)
+        input_err = check_job_input_video(job)
+        if input_err:
+            _mark_failed(job, RuntimeError(input_err))
             return {"public_id": public_id, "status": EmbeddingJob.Status.FAILED}
 
         run_single_embedding_job(job)

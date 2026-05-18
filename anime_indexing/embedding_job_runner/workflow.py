@@ -1,33 +1,18 @@
 from __future__ import annotations
 
 import logging
-import shutil
-from pathlib import Path
 
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
 
 from anime_indexing.frame_directory_embedding.runtime import get_vision_worker
-from anime_indexing.paths import (
-    anime_staging_root,
-    ensure_dir,
-    frames_leaf_under_media,
-    staging_frames_leaf,
-    staging_input_dir_for_job_frames,
-)
+from anime_indexing.paths import staging_frames_leaf
 from anime_indexing.vectors.qdrant_upsert import (
     delete_points_for_anime_episode,
     qdrant_is_configured,
     upsert_job_frame_vectors,
 )
-from anime_indexing.video.extract import extract_frames_ffmpeg, find_first_video
-from anime_indexing.video.pts_manifest import (
-    MANIFEST_FILENAME,
-    load_pts_by_file,
-    sorted_frame_jpgs,
-    write_frames_pts_manifest,
-)
+from anime_indexing.video.pts_manifest import load_pts_by_file, sorted_frame_jpgs
 
 from embeddings.models import EmbeddingJob
 
@@ -39,6 +24,10 @@ def maybe_extract_video_for_job(job: EmbeddingJob) -> None:
     스테이징 ``frames`` 에 JPG가 없고, 형제 ``input`` 디렉터리에 동영상이 있으면 ffmpeg으로
     프레임을 채운 뒤 ffprobe 기반 PTS 매니페스트를 남긴다.
     """
+    from anime_indexing.paths import ensure_dir, staging_input_dir_for_job_frames
+    from anime_indexing.video.extract import extract_frames_ffmpeg, find_first_video
+    from anime_indexing.video.pts_manifest import write_frames_pts_manifest
+
     frames_leaf = staging_frames_leaf(job.staging_rel_path)
     if any(frames_leaf.glob("*.jpg")):
         return
@@ -70,43 +59,8 @@ def maybe_extract_video_for_job(job: EmbeddingJob) -> None:
         )
 
 
-def promote_jpgs_from_staging_to_media(*, job: EmbeddingJob) -> Path:
-    """
-    스테이징 leaf의 JPG(및 PTS 매니페스트)를 캐논 `…/{slug}/episodes/{n}/frames/` 로 이동한다.
-    """
-    src_leaf = staging_frames_leaf(job.staging_rel_path)
-    if not src_leaf.is_dir():
-        raise FileNotFoundError(f"스테이징 디렉터리가 없습니다: {src_leaf}")
-
-    jpgs = sorted(src_leaf.glob("*.jpg"))
-    if not jpgs:
-        raise FileNotFoundError(f"스테이징에 JPG가 없습니다: {src_leaf}")
-
-    dst_leaf = frames_leaf_under_media(job.anime.slug, job.episode.number)
-    dst_leaf.mkdir(parents=True, exist_ok=True)
-
-    for p in dst_leaf.glob("*.jpg"):
-        p.unlink()
-
-    for p in jpgs:
-        shutil.move(str(p), str(dst_leaf / p.name))
-
-    man = src_leaf / MANIFEST_FILENAME
-    if man.is_file():
-        dest_man = dst_leaf / MANIFEST_FILENAME
-        if dest_man.is_file():
-            dest_man.unlink()
-        shutil.move(str(man), str(dest_man))
-
-    job_root = anime_staging_root() / "jobs" / str(job.public_id)
-    if job_root.is_dir():
-        shutil.rmtree(job_root, ignore_errors=True)
-
-    return dst_leaf
-
-
 def run_single_embedding_job(job: EmbeddingJob) -> None:
-    """이미 ``processing`` 등으로 잠긴 행에 대해 추출·승격·프레임별 CLIP·Qdrant까지 수행."""
+    """이미 ``processing`` 등으로 잠긴 행에 대해 추출·CLIP·Qdrant까지 수행 (프레임은 스테이징에 유지)."""
     from embeddings.services.job_staging import ensure_job_staging_dirs
 
     job = (
@@ -117,13 +71,15 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
 
     ensure_job_staging_dirs(job)
     maybe_extract_video_for_job(job)
-    dst_leaf = promote_jpgs_from_staging_to_media(job=job)
+    frames_leaf = staging_frames_leaf(job.staging_rel_path)
+    if not frames_leaf.is_dir():
+        raise FileNotFoundError(f"스테이징 디렉터리가 없습니다: {frames_leaf}")
 
-    jpgs = sorted_frame_jpgs(dst_leaf)
+    jpgs = sorted_frame_jpgs(frames_leaf)
     if not jpgs:
         raise RuntimeError("프레임이 0개입니다.")
 
-    pts_map = load_pts_by_file(dst_leaf)
+    pts_map = load_pts_by_file(frames_leaf)
     default_fps = 24.0
     times: list[float] = []
     for i, p in enumerate(jpgs):

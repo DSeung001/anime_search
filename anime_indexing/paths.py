@@ -27,9 +27,9 @@ def resolve_under_root(root: Path, relative: str) -> Path:
     return candidate
 
 
-def resolve_frames_dir(relative_frames_dir: str) -> Path:
-    """ANIME_MEDIA_ROOT 기준 leaf 프레임 디렉터리."""
-    return resolve_under_root(anime_media_root(), relative_frames_dir)
+def resolve_staging_frames_dir(relative_frames_dir: str) -> Path:
+    """ANIME_STAGING_ROOT 기준 프레임 leaf (예: ``jobs/<uuid>/frames``)."""
+    return resolve_under_root(anime_staging_root(), relative_frames_dir)
 
 
 def canonical_frames_key(anime_id: str, episode_number: int) -> str:
@@ -42,11 +42,6 @@ def canonical_frames_key(anime_id: str, episode_number: int) -> str:
     if episode_number < 1:
         raise ValueError("episode_number는 1 이상이어야 합니다.")
     return f"{aid}/episodes/{int(episode_number)}/frames"
-
-
-def frames_leaf_under_media(anime_id: str, episode_number: int) -> Path:
-    """CLIP 입력 leaf: ANIME_MEDIA_ROOT / {slug} / episodes / {n} / frames"""
-    return anime_media_root() / canonical_frames_key(anime_id, episode_number)
 
 
 def staging_frames_leaf(staging_rel_path: str) -> Path:

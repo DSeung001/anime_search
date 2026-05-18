@@ -203,11 +203,15 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
     if gate:
         return gate
 
+    # 애니메이션 시리즈 구분하기 위한 리스트 가져오기
     animes = list(Anime.objects.order_by("slug"))
+    # 장르 리스트 가져오기
     genres = list(Genre.objects.order_by("sort_order", "slug"))
 
+    # 업로드
     if request.method == "POST":
         slug = (request.POST.get("anime_slug") or "").strip()
+        # slug 유효성 검사
         if not is_valid_anime_id(slug):
             msg = "시리즈 slug는 영문·숫자·_- 만 1~255자여야 합니다."
             if _wants_json(request):
@@ -215,15 +219,19 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
             messages.error(request, msg)
             return redirect("catalog_anime_upload")
 
+        # 애니메이션이 없으면 새로 만들고 있으면 그대로 사용
         title = (request.POST.get("title") or "").strip()
         anime, _ = Anime.objects.get_or_create(slug=slug, defaults={"title": title})
+        # title은 선택(없으면 slug만으로 생성)
         if title:
             anime.title = title
             anime.save(update_fields=["title", "updated_at"])
 
+        # 장르 데이터를 n:m 연결
         ids = [int(x) for x in request.POST.getlist("genre_ids") if x.isdigit()]
         anime.genres.set(Genre.objects.filter(pk__in=ids))
 
+        # 에피소드 유효성 검사
         ep_raw = (request.POST.get("episode") or "").strip()
         if not ep_raw:
             msg = "episode(화수)는 필수입니다."
@@ -243,7 +251,9 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
             return redirect("catalog_anime_upload")
 
         episode_row = get_or_create_episode(anime=anime, number=episode_number)
+        # Job 생성(anime·episode FK로 연결)
         job = EmbeddingJob.objects.create(anime=anime, episode=episode_row)
+        # 잡 스테이징 디렉터리(jobs/<id>/frames, input/) 생성
         frames_leaf = ensure_job_staging_dirs(job)
         input_dir = staging_input_dir_for_job_frames(frames_leaf)
 
@@ -258,11 +268,15 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                     return JsonResponse({"detail": str(exc)}, status=400)
                 messages.error(request, str(exc))
                 return redirect("catalog_anime_upload")
+            # pathlib로 경로 조합(문자열 split/join 대신)
             dest = input_dir / dest_name
             with dest.open("wb") as out:
+                # Django의 chunks()로 스트리밍 저장(기본 청크 64KB)
                 for chunk in f.chunks():
                     out.write(chunk)
 
+        # TODO: DB·파일 저장을 transaction.atomic() 등으로 묶기
+        # DB 커밋 후 Celery enqueue 예약(on_commit; atomic 블록 안이면 즉시 실행)
         schedule_auto_enqueue_on_commit(job.public_id)
 
         if _wants_json(request):
