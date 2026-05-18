@@ -17,7 +17,7 @@ from anime_indexing.paths import (
     staging_input_dir_for_job_frames,
 )
 from anime_indexing.vectors.qdrant_upsert import (
-    delete_points_for_job_public_id,
+    delete_points_for_anime_episode,
     qdrant_is_configured,
     upsert_job_frame_vectors,
 )
@@ -72,7 +72,7 @@ def maybe_extract_video_for_job(job: EmbeddingJob) -> None:
 
 def promote_jpgs_from_staging_to_media(*, job: EmbeddingJob) -> Path:
     """
-    스테이징 leaf의 JPG(및 PTS 매니페스트)를 캐논 `ANIME_MEDIA_ROOT/{anime.slug}/frames/` 로 이동한다.
+    스테이징 leaf의 JPG(및 PTS 매니페스트)를 캐논 `…/{slug}/episodes/{n}/frames/` 로 이동한다.
     """
     src_leaf = staging_frames_leaf(job.staging_rel_path)
     if not src_leaf.is_dir():
@@ -82,7 +82,7 @@ def promote_jpgs_from_staging_to_media(*, job: EmbeddingJob) -> Path:
     if not jpgs:
         raise FileNotFoundError(f"스테이징에 JPG가 없습니다: {src_leaf}")
 
-    dst_leaf = frames_leaf_under_media(job.anime.slug)
+    dst_leaf = frames_leaf_under_media(job.anime.slug, job.episode.number)
     dst_leaf.mkdir(parents=True, exist_ok=True)
 
     for p in dst_leaf.glob("*.jpg"):
@@ -109,7 +109,11 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
     """이미 ``processing`` 등으로 잠긴 행에 대해 추출·승격·프레임별 CLIP·Qdrant까지 수행."""
     from embeddings.services.job_staging import ensure_job_staging_dirs
 
-    job = EmbeddingJob.objects.select_related("anime").prefetch_related("anime__genres").get(pk=job.pk)
+    job = (
+        EmbeddingJob.objects.select_related("anime", "episode")
+        .prefetch_related("anime__genres")
+        .get(pk=job.pk)
+    )
 
     ensure_job_staging_dirs(job)
     maybe_extract_video_for_job(job)
@@ -128,7 +132,10 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
         else:
             times.append(float(i) / default_fps)
 
-    delete_points_for_job_public_id(job.public_id)
+    delete_points_for_anime_episode(
+        anime_slug=job.anime.slug,
+        episode_number=job.episode.number,
+    )
 
     worker = get_vision_worker()
     genre_slugs = list(job.anime.genres.order_by("slug").values_list("slug", flat=True))
@@ -150,7 +157,8 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
         upsert_job_frame_vectors(
             job_public_id=job.public_id,
             anime_slug=job.anime.slug,
-            episode=job.episode,
+            episode=job.episode.number,
+            episode_id=job.episode_id,
             genre_slugs=genre_slugs,
             frame_indices=frame_indices,
             vectors=matrix,

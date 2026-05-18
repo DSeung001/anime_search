@@ -11,6 +11,16 @@ pip install -r requirements.txt
 python3 manage.py migrate
 ```
 
+스키마를 Episode 정규화 이후로 **처음부터** 맞추려면 DB·로컬 데이터를 비운 뒤 migrate 하면 됩니다.
+
+```bash
+rm -f db.sqlite3
+rm -rf data/staging/jobs data/media
+python3 manage.py migrate
+```
+
+(Qdrant에 옛 벡터가 남아 있으면 컬렉션을 비우거나 `QDRANT_COLLECTION`을 새 이름으로 바꾸세요.)
+
 ## 로컬 실행 (웹 + 비동기 잡)
 
 임베딩 잡은 **Celery**로 돌아가며, 기본 설정은 **Redis를 메시지 브로커 + 결과 저장소**로 씁니다.
@@ -78,13 +88,13 @@ python3 manage.py runserver
 
 | 구성요소 | 하는 일 | 잡 실행? |
 |----------|---------|----------|
-| Django `runserver` | `/jobs/` UI, `POST /jobs/api/run*` (큐 적재), `GET /jobs/api/jobs/` (상태 읽기) | POST는 enqueue만 |
+| Django `runserver` | `/jobs/` UI, `POST /api/jobs/<uuid>/run/` (큐 적재), `GET /api/jobs/` (상태 읽기) | POST는 enqueue만 |
 | Celery worker | `run_embedding_job_task` → CLIP·Qdrant 파이프라인 | **실제 실행** |
 | 브라우저 폴링 | `pending`/`processing` 잡이 있을 때 약 2초마다 **목록 API 1회** | **없음** (읽기 전용) |
 
 폴링 중에 “이 잡 실행”을 눌러도 **충돌하지 않습니다**. 실행은 worker가 하고, 폴링은 DB 상태만 반영합니다.
 
-`runserver` 로그에 `GET /jobs/api/jobs/` 가 반복되는 것은 위 폴링 때문이며, 활성 잡이 없으면 요청이 멈춥니다.
+`runserver` 로그에 `GET /api/jobs/` 가 반복되는 것은 위 폴링 때문이며, 활성 잡이 없으면 요청이 멈춥니다.
 
 ### 디스크 경로 (로컬)
 
@@ -94,7 +104,7 @@ python3 manage.py runserver
 |-----------|------|
 | `data/staging/jobs/<job-uuid>/input/` | 업로드 동영상 (잡마다 UUID 폴더 1개) |
 | `data/staging/jobs/<job-uuid>/frames/` | 추출·작업 중 JPG |
-| `data/media/<anime-slug>/frames/` | 잡 완료 후 승격된 JPG (시리즈 slug 기준) |
+| `data/media/<anime-slug>/episodes/<n>/frames/` | 잡 완료 후 승격된 JPG (시리즈·화 단위) |
 
 `/upload/` 한 번 = `EmbeddingJob` 1건 = `jobs/<public_id>/` 폴더 1개. 옛 `ANIME_STAGING_ROOT`·`anime_data` 등은 쓰지 않습니다.
 

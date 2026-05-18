@@ -11,11 +11,15 @@ from anime_indexing.paths import (
 
 class MediaPathTests(SimpleTestCase):
     def test_canonical_frames_key(self) -> None:
-        self.assertEqual(canonical_frames_key("my_show"), "my_show/frames")
+        self.assertEqual(canonical_frames_key("my_show", 3), "my_show/episodes/3/frames")
 
     def test_canonical_frames_key_rejects_slash(self) -> None:
         with self.assertRaises(ValueError):
-            canonical_frames_key("a/b")
+            canonical_frames_key("a/b", 1)
+
+    def test_canonical_frames_key_rejects_bad_episode(self) -> None:
+        with self.assertRaises(ValueError):
+            canonical_frames_key("my_show", 0)
 
     @override_settings(ANIME_MEDIA_ROOT="/tmp/anime_media_test")
     def test_resolve_blocks_traversal(self) -> None:

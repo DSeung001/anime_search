@@ -21,9 +21,10 @@ def effective_ffmpeg() -> str:
 def storage_snapshot() -> dict[str, Any]:
     ex = "my_show"
     return {
-        "canonical_frames_key_pattern": "{anime_id}/frames",
+        "canonical_frames_key_pattern": "{anime_id}/episodes/{episode}/frames",
         "example_anime_id": ex,
-        "example_canonical_key": canonical_frames_key(ex),
+        "example_episode": 3,
+        "example_canonical_key": canonical_frames_key(ex, 3),
         "anime_data_root": str(settings.ANIME_DATA_ROOT),
         "staging_root": str(settings.ANIME_STAGING_ROOT),
         "media_root": str(settings.ANIME_MEDIA_ROOT),
@@ -33,7 +34,7 @@ def storage_snapshot() -> dict[str, Any]:
             "frames_jpg": "<staging_root>/jobs/<job-uuid>/frames/*.jpg",
             "optional_video": "<staging_root>/jobs/<job-uuid>/input/*.mp4|mkv|webm|mov|avi|m4v",
         },
-        "after_job_done": "<media_root>/<anime_slug>/frames/*.jpg",
+        "after_job_done": "<media_root>/<anime_slug>/episodes/<n>/frames/*.jpg",
         "clip_weights_dir": str(CLIP_WEIGHTS_DIR),
         "clip_default_checkpoint": str(DEFAULT_CLIP_CHECKPOINT_PATH),
         "qdrant_indexing": "임베딩 완료 시 JPG 한 장당 Qdrant 포인트 1개(frame_index, timestamp_sec, frame_file payload).",
@@ -52,7 +53,7 @@ def endpoint_catalog() -> list[dict[str, Any]]:
                 "genre_slugs": ["action", "fantasy"],
             },
             "notes": [
-                "anime_id 필수(시리즈 슬러그). episode 선택. genre_slugs 는 선택·JSON 문자열 배열이며 있으면 해당 Anime 장르 M2M을 덮어씀.",
+                "anime_id 필수(시리즈 슬러그). episode(화수) 필수 — catalog.Episode get_or_create. genre_slugs 는 선택.",
                 "장르·시리즈·화 메타는 Qdrant payload에 비정규화되며, 검색 시 선택 필터로 쓰인다.",
                 "스테이징에 JPG 또는 input/ 동영상이 있으면 커밋 후 Celery에 자동 enqueue. 없으면 pending 유지.",
             ],

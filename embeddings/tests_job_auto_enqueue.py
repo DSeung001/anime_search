@@ -8,6 +8,7 @@ from anime_indexing.paths import ensure_dir, staging_frames_leaf, staging_input_
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
+from embeddings.test_utils import make_job
 from embeddings.services.job_auto_enqueue import (
     schedule_auto_enqueue_on_commit,
     try_auto_enqueue_job,
@@ -28,7 +29,7 @@ class TryAutoEnqueueTests(TestCase):
         self.anime = Anime.objects.create(slug="auto_show", title="Auto")
 
     def test_enqueues_when_staging_ready(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         _staging_with_jpg(job)
         with patch("embeddings.tasks.run_single_embedding_job"):
             ok = try_auto_enqueue_job(job.public_id)
@@ -38,7 +39,7 @@ class TryAutoEnqueueTests(TestCase):
         self.assertTrue(job.celery_task_id)
 
     def test_skips_when_staging_not_ready(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         ensure_job_staging_dirs(job)
         ok = try_auto_enqueue_job(job.public_id)
         self.assertFalse(ok)
@@ -53,7 +54,7 @@ class ScheduleOnCommitTests(TransactionTestCase):
         self.anime = Anime.objects.create(slug="commit_show", title="Commit")
 
     def test_on_commit_enqueues_after_transaction(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         _staging_with_jpg(job)
         with patch("embeddings.tasks.run_single_embedding_job"):
             schedule_auto_enqueue_on_commit(job.public_id)

@@ -22,6 +22,7 @@ from anime_indexing.paths import (
 from anime_indexing.video.extract import VIDEO_EXTENSIONS
 
 from catalog.models import Anime, Genre
+from catalog.services.episode import get_or_create_episode
 from catalog.services.genre_bulk import bulk_create_genres
 from catalog.services.genre_slug import unique_genre_slug
 from catalog.services.label_ko import parse_label_ko_bulk
@@ -197,6 +198,7 @@ def serve_uploaded_video(request: HttpRequest, public_id: UUID, filename: str) -
 
 @require_http_methods(["GET", "POST"])
 def anime_upload(request: HttpRequest) -> HttpResponse:
+    # 로그인 필요 여부 체크, 개발 단계에서는 체크 안함
     gate = _ui_gate(request)
     if gate:
         return gate
@@ -223,20 +225,25 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
         anime.genres.set(Genre.objects.filter(pk__in=ids))
 
         ep_raw = (request.POST.get("episode") or "").strip()
-        episode = None
-        if ep_raw:
-            try:
-                episode = int(ep_raw)
-                if episode < 1:
-                    raise ValueError
-            except ValueError:
-                msg = "episode는 1 이상 정수여야 합니다."
-                if _wants_json(request):
-                    return JsonResponse({"detail": msg}, status=400)
-                messages.error(request, msg)
-                return redirect("catalog_anime_upload")
+        if not ep_raw:
+            msg = "episode(화수)는 필수입니다."
+            if _wants_json(request):
+                return JsonResponse({"detail": msg}, status=400)
+            messages.error(request, msg)
+            return redirect("catalog_anime_upload")
+        try:
+            episode_number = int(ep_raw)
+            if episode_number < 1:
+                raise ValueError
+        except ValueError:
+            msg = "episode는 1 이상 정수여야 합니다."
+            if _wants_json(request):
+                return JsonResponse({"detail": msg}, status=400)
+            messages.error(request, msg)
+            return redirect("catalog_anime_upload")
 
-        job = EmbeddingJob.objects.create(anime=anime, episode=episode)
+        episode_row = get_or_create_episode(anime=anime, number=episode_number)
+        job = EmbeddingJob.objects.create(anime=anime, episode=episode_row)
         frames_leaf = ensure_job_staging_dirs(job)
         input_dir = staging_input_dir_for_job_frames(frames_leaf)
 
@@ -286,6 +293,7 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
             )
         return redirect("catalog_jobs")
 
+    # 업로드 페이지 보여주기
     return render(
         request,
         "catalog/anime_upload.html",
@@ -303,7 +311,8 @@ def _job_status_payload(job: EmbeddingJob) -> dict[str, str | None]:
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
         "processed_at": job.processed_at.isoformat() if job.processed_at else None,
-        "episode": job.episode,
+        "episode": job.episode.number,
+        "episode_id": job.episode_id,
         "celery_task_id": job.celery_task_id or "",
     }
 
@@ -313,7 +322,7 @@ def job_api_list(request: HttpRequest) -> HttpResponse:
     gate = _ui_gate(request)
     if gate:
         return gate
-    jobs = EmbeddingJob.objects.select_related("anime").order_by("-created_at")[:80]
+    jobs = EmbeddingJob.objects.select_related("anime", "episode").order_by("-created_at")[:80]
     return JsonResponse({"jobs": [_job_status_payload(j) for j in jobs]})
 
 
@@ -394,5 +403,5 @@ def job_console(request: HttpRequest) -> HttpResponse:
             messages.success(request, "다시 대기열에 넣었습니다. 처리 큐에 넣는 중입니다.")
             return redirect("catalog_jobs")
 
-    jobs = list(EmbeddingJob.objects.select_related("anime").order_by("-created_at")[:80])
+    jobs = list(EmbeddingJob.objects.select_related("anime", "episode").order_by("-created_at")[:80])
     return render(request, "catalog/job_console.html", {"jobs": jobs})

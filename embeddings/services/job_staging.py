@@ -37,13 +37,16 @@ def ensure_job_staging_dirs(job: EmbeddingJob) -> Path:
 def seed_staging_frames_from_canonical(job: EmbeddingJob) -> bool:
     """
     처리 완료 후 스테이징이 삭제된 잡 재실행용.
-    캐논 ``{slug}/frames/*.jpg`` 가 있으면 스테이징 ``frames/`` 로 복사한다.
+    캐논 ``{slug}/episodes/{n}/frames/*.jpg`` 가 있으면 스테이징 ``frames/`` 로 복사한다.
     """
     frames_leaf = staging_frames_leaf(job.staging_rel_path)
     if any(frames_leaf.glob("*.jpg")):
         return True
 
-    media_leaf = frames_leaf_under_media(job.anime.slug)
+    ep_num = job.episode.number if job.episode_id else None
+    if ep_num is None:
+        return False
+    media_leaf = frames_leaf_under_media(job.anime.slug, ep_num)
     if not media_leaf.is_dir():
         return False
 

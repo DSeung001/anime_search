@@ -13,6 +13,7 @@ from anime_indexing.paths import anime_staging_root, ensure_dir, frames_leaf_und
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
+from embeddings.test_utils import make_job
 from embeddings.services.job_delete import JobDeleteError, delete_embedding_job
 
 
@@ -38,7 +39,7 @@ class JobDeleteServiceTests(TestCase):
         (root / "frames" / "a.jpg").write_bytes(b"\xff\xd8\xff")
 
     def test_delete_pending_removes_db_and_staging(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         self._staging_root_for(job)
         staging_path = anime_staging_root() / "jobs" / str(job.public_id)
         public_id = job.public_id
@@ -51,22 +52,19 @@ class JobDeleteServiceTests(TestCase):
         self.assertFalse(staging_path.exists())
 
     def test_delete_processing_raises(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
-            status=EmbeddingJob.Status.PROCESSING,
-        )
+        job = make_job(self.anime, status=EmbeddingJob.Status.PROCESSING)
         with self.assertRaises(JobDeleteError) as ctx:
             delete_embedding_job(public_id=job.public_id)
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertTrue(EmbeddingJob.objects.filter(pk=job.pk).exists())
 
     def test_delete_done_removes_canonical_when_latest(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
+        job = make_job(
+            self.anime,
             status=EmbeddingJob.Status.DONE,
             processed_at=timezone.now(),
         )
-        leaf = frames_leaf_under_media(self.anime.slug)
+        leaf = frames_leaf_under_media(self.anime.slug, job.episode.number)
         ensure_dir(leaf)
         (leaf / "frame.jpg").write_bytes(b"\xff\xd8\xff")
 
@@ -79,17 +77,19 @@ class JobDeleteServiceTests(TestCase):
     def test_delete_older_done_keeps_canonical(self) -> None:
         older_time = timezone.now() - timedelta(hours=2)
         newer_time = timezone.now() - timedelta(hours=1)
-        older = EmbeddingJob.objects.create(
-            anime=self.anime,
+        older = make_job(
+            self.anime,
+            episode_number=1,
             status=EmbeddingJob.Status.DONE,
             processed_at=older_time,
         )
-        EmbeddingJob.objects.create(
-            anime=self.anime,
+        make_job(
+            self.anime,
+            episode_number=1,
             status=EmbeddingJob.Status.DONE,
             processed_at=newer_time,
         )
-        leaf = frames_leaf_under_media(self.anime.slug)
+        leaf = frames_leaf_under_media(self.anime.slug, older.episode.number)
         ensure_dir(leaf)
         (leaf / "frame.jpg").write_bytes(b"\xff\xd8\xff")
 
@@ -123,7 +123,7 @@ class JobDeleteApiTests(TestCase):
         self._staging_tmp.cleanup()
 
     def test_api_delete_success(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.FAILED)
+        job = make_job(self.anime, status=EmbeddingJob.Status.FAILED)
         url = reverse("catalog_job_api_delete", kwargs={"public_id": job.public_id})
         with patch("embeddings.services.job_delete.delete_points_for_job_public_id"):
             resp = self.client.post(url)
@@ -132,10 +132,7 @@ class JobDeleteApiTests(TestCase):
         self.assertFalse(EmbeddingJob.objects.filter(pk=job.pk).exists())
 
     def test_api_delete_processing_409(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
-            status=EmbeddingJob.Status.PROCESSING,
-        )
+        job = make_job(self.anime, status=EmbeddingJob.Status.PROCESSING)
         url = reverse("catalog_job_api_delete", kwargs={"public_id": job.public_id})
         resp = self.client.post(url)
         self.assertEqual(resp.status_code, 409)

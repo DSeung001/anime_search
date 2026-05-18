@@ -9,6 +9,7 @@ from anime_indexing.paths import ensure_dir, staging_frames_leaf, staging_input_
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
+from embeddings.test_utils import make_job
 from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
 from embeddings.services.job_preflight import check_job_staging_ready
 from embeddings.services.job_staging import ensure_job_staging_dirs
@@ -32,7 +33,7 @@ class JobPreflightTests(TestCase):
 
         from anime_indexing.paths import anime_staging_root
 
-        job = EmbeddingJob.objects.create(anime=self.anime)
+        job = make_job(self.anime)
         job_root = anime_staging_root() / "jobs" / str(job.public_id)
         if job_root.is_dir():
             shutil.rmtree(job_root)
@@ -42,13 +43,13 @@ class JobPreflightTests(TestCase):
         self.assertIn("JPG", err or "")
 
     def test_create_ensures_staging_dirs(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime)
+        job = make_job(self.anime)
         leaf = staging_frames_leaf(job.staging_rel_path)
         self.assertTrue(leaf.is_dir())
         self.assertTrue(staging_input_dir_for_job_frames(leaf).is_dir())
 
     def test_ready_with_jpg(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime)
+        job = make_job(self.anime)
         _staging_with_jpg(job)
         self.assertIsNone(check_job_staging_ready(job))
 
@@ -59,7 +60,7 @@ class EnqueueRunJobTests(TestCase):
         self.anime = Anime.objects.create(slug="test_show", title="Test")
 
     def test_enqueue_pending_sets_processing_and_task_id(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         _staging_with_jpg(job)
         with patch("embeddings.tasks.run_single_embedding_job") as mock_run:
             result = enqueue_run_job(job.public_id)
@@ -70,7 +71,7 @@ class EnqueueRunJobTests(TestCase):
         self.assertEqual(job.celery_task_id, result.celery_task_id)
 
     def test_enqueue_rejects_bad_staging(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.PENDING)
+        job = make_job(self.anime, status=EmbeddingJob.Status.PENDING)
         with self.assertRaises(JobDispatchError) as ctx:
             enqueue_run_job(job.public_id)
         self.assertEqual(ctx.exception.status_code, 400)
@@ -78,8 +79,8 @@ class EnqueueRunJobTests(TestCase):
         self.assertEqual(job.status, EmbeddingJob.Status.PENDING)
 
     def test_enqueue_rejects_processing(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
+        job = make_job(
+            self.anime,
             status=EmbeddingJob.Status.PROCESSING,
             celery_task_id="existing-task",
         )
@@ -88,7 +89,7 @@ class EnqueueRunJobTests(TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_enqueue_rejects_non_pending(self) -> None:
-        job = EmbeddingJob.objects.create(anime=self.anime, status=EmbeddingJob.Status.DONE)
+        job = make_job(self.anime, status=EmbeddingJob.Status.DONE)
         with self.assertRaises(JobDispatchError) as ctx:
             enqueue_run_job(job.public_id)
         self.assertEqual(ctx.exception.status_code, 400)
@@ -100,10 +101,7 @@ class RunEmbeddingJobTaskTests(TestCase):
         self.anime = Anime.objects.create(slug="fail_show", title="Fail")
 
     def test_task_marks_failed_on_runner_error(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
-            status=EmbeddingJob.Status.PROCESSING,
-        )
+        job = make_job(self.anime, status=EmbeddingJob.Status.PROCESSING)
         _staging_with_jpg(job)
         with patch(
             "embeddings.tasks.run_single_embedding_job",
@@ -116,10 +114,7 @@ class RunEmbeddingJobTaskTests(TestCase):
         self.assertIn("clip boom", job.last_error)
 
     def test_task_fails_preflight_without_runner(self) -> None:
-        job = EmbeddingJob.objects.create(
-            anime=self.anime,
-            status=EmbeddingJob.Status.PROCESSING,
-        )
+        job = make_job(self.anime, status=EmbeddingJob.Status.PROCESSING)
         with patch("embeddings.tasks.run_single_embedding_job") as mock_run:
             out = run_embedding_job_task(str(job.public_id))
             mock_run.assert_not_called()

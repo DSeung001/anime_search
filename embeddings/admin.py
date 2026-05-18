@@ -8,7 +8,7 @@ class EmbeddingJobAdmin(admin.ModelAdmin):
     list_display = (
         "public_id",
         "anime_slug_display",
-        "episode",
+        "episode_number_display",
         "status",
         "canonical_key",
         "created_at",
@@ -28,3 +28,7 @@ class EmbeddingJobAdmin(admin.ModelAdmin):
     @admin.display(description="anime (slug)")
     def anime_slug_display(self, obj: EmbeddingJob) -> str:
         return obj.anime.slug
+
+    @admin.display(description="episode")
+    def episode_number_display(self, obj: EmbeddingJob) -> int:
+        return obj.episode.number

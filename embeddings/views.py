@@ -29,7 +29,8 @@ from anime_indexing.vectors.qdrant_search import search_segments
 
 from catalog.models import Anime, Genre
 from embeddings.api_reference import path_help_payload
-from embeddings.job_fields import extra_embedding_job_fields_from_json
+from catalog.services.episode import get_or_create_episode
+from embeddings.job_fields import required_episode_number_from_json
 from embeddings.models import EmbeddingJob
 from embeddings.services.job_auto_enqueue import schedule_auto_enqueue_on_commit
 from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
@@ -101,10 +102,9 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
             status=400,
         )
 
-    extra, err = extra_embedding_job_fields_from_json(body)
+    ep_num, err = required_episode_number_from_json(body)
     if err:
         return JsonResponse({"detail": err}, status=400)
-
     anime, _ = Anime.objects.get_or_create(slug=slug, defaults={"title": ""})
 
     raw_genres = body.get("genre_slugs")
@@ -126,7 +126,8 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
         ]
         anime.genres.set(genres)
 
-    job = EmbeddingJob.objects.create(anime=anime, **extra)
+    episode_row = get_or_create_episode(anime=anime, number=ep_num)
+    job = EmbeddingJob.objects.create(anime=anime, episode=episode_row)
     staging_leaf = ensure_job_staging_dirs(job)
     schedule_auto_enqueue_on_commit(job.public_id)
 
@@ -137,13 +138,16 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
         "canonical_key": job.canonical_key,
         "staging_rel_path": job.staging_rel_path,
         "status": job.status,
-        "episode": job.episode,
+        "episode": job.episode.number,
+        "episode_id": job.episode_id,
         "genres": genre_slugs,
     }
     if settings.DEBUG:
         payload["staging_absolute"] = str(staging_leaf)
         payload["staging_input_absolute"] = str(staging_input_dir_for_job_frames(staging_leaf))
-        payload["canonical_frames_absolute"] = str(frames_leaf_under_media(anime.slug))
+        payload["canonical_frames_absolute"] = str(
+            frames_leaf_under_media(anime.slug, job.episode.number)
+        )
         payload["s3_logical_prefix"] = (settings.S3_MEDIA_PREFIX + job.canonical_key).lstrip("/")
     return JsonResponse(payload, status=201)
 
@@ -154,7 +158,10 @@ def get_embedding_job(request: HttpRequest, public_id: UUID) -> JsonResponse:
     if not _embed_allowed(request):
         return JsonResponse({"detail": "forbidden"}, status=403)
 
-    job = get_object_or_404(EmbeddingJob.objects.select_related("anime"), public_id=public_id)
+    job = get_object_or_404(
+        EmbeddingJob.objects.select_related("anime", "episode"),
+        public_id=public_id,
+    )
     genre_slugs = list(job.anime.genres.order_by("slug").values_list("slug", flat=True))
     return JsonResponse(
         {
@@ -167,7 +174,8 @@ def get_embedding_job(request: HttpRequest, public_id: UUID) -> JsonResponse:
             "created_at": job.created_at.isoformat(),
             "updated_at": job.updated_at.isoformat(),
             "processed_at": job.processed_at.isoformat() if job.processed_at else None,
-            "episode": job.episode,
+            "episode": job.episode.number,
+            "episode_id": job.episode_id,
             "genres": genre_slugs,
             "celery_task_id": job.celery_task_id or "",
         }

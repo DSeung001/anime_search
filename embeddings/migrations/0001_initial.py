@@ -1,4 +1,4 @@
-# 최종 EmbeddingJob 스키마 (MVP: 기존 0001–0005 체인 대체). 로컬 DB는 삭제 후 migrate 권장.
+# EmbeddingJob + catalog.Episode FK. 로컬 DB 초기화 후 migrate.
 
 import uuid
 
@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("catalog", "0001_initial"),
+        ("catalog", "0002_genre_label_ko_norm"),
     ]
 
     operations = [
@@ -29,11 +29,19 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
+                    "episode",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="embedding_jobs",
+                        to="catalog.episode",
+                    ),
+                ),
+                (
                     "canonical_key",
                     models.CharField(
                         db_index=True,
                         editable=False,
-                        help_text="디스크·S3 논리 키: `{anime.slug}/frames` (ANIME_MEDIA_ROOT / S3_MEDIA_PREFIX 기준 상대)",
+                        help_text="디스크·S3 논리 키: `{slug}/episodes/{n}/frames`",
                         max_length=512,
                     ),
                 ),
@@ -61,17 +69,18 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("last_error", models.TextField(blank=True, default="")),
+                (
+                    "celery_task_id",
+                    models.CharField(
+                        blank=True,
+                        default="",
+                        help_text="마지막 Celery task id (Flower·디버깅)",
+                        max_length=255,
+                    ),
+                ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("processed_at", models.DateTimeField(blank=True, null=True)),
-                (
-                    "episode",
-                    models.PositiveIntegerField(
-                        blank=True,
-                        help_text="Qdrant payload: 특정 화만 필터 검색할 때",
-                        null=True,
-                    ),
-                ),
             ],
             options={
                 "ordering": ["-created_at"],

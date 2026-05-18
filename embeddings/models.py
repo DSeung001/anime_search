@@ -10,7 +10,7 @@ from anime_indexing.paths import canonical_frames_key
 class EmbeddingJob(models.Model):
     """
     비동기 임베딩 작업. 캐논 프레임 경로는
-    `{ANIME_MEDIA_ROOT}/{anime.slug}/frames/` (= canonical_key) 와 1:1.
+    `{ANIME_MEDIA_ROOT}/{anime.slug}/episodes/{n}/frames/` (= canonical_key).
     """
 
     class Status(models.TextChoices):
@@ -25,11 +25,16 @@ class EmbeddingJob(models.Model):
         on_delete=models.PROTECT,
         related_name="embedding_jobs",
     )
+    episode = models.ForeignKey(
+        "catalog.Episode",
+        on_delete=models.PROTECT,
+        related_name="embedding_jobs",
+    )
     canonical_key = models.CharField(
         max_length=512,
         editable=False,
         db_index=True,
-        help_text="디스크·S3 논리 키: `{anime.slug}/frames` (ANIME_MEDIA_ROOT / S3_MEDIA_PREFIX 기준 상대)",
+        help_text="디스크·S3 논리 키: `{slug}/episodes/{n}/frames`",
     )
     staging_rel_path = models.CharField(
         max_length=512,
@@ -53,17 +58,17 @@ class EmbeddingJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     processed_at = models.DateTimeField(null=True, blank=True)
-    episode = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text="Qdrant payload: 특정 화만 필터 검색할 때",
-    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def save(self, *args, **kwargs) -> None:
-        self.canonical_key = canonical_frames_key(self.anime.slug)
+        if self.episode_id:
+            self.anime_id = self.episode.anime_id
+            self.canonical_key = canonical_frames_key(
+                self.episode.anime.slug,
+                self.episode.number,
+            )
         if not self.staging_rel_path:
             self.staging_rel_path = f"jobs/{self.public_id}/frames"
         adding = self._state.adding

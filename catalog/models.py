@@ -42,7 +42,7 @@ class Genre(models.Model):
 
 
 class Anime(models.Model):
-    """시리즈(슬러그) 단위. 디스크 캐논 경로 `ANIME_MEDIA_ROOT/{slug}/frames` 와 동일 슬러그."""
+    """시리즈(슬러그) 단위."""
 
     slug = models.SlugField(max_length=255, unique=True, db_index=True)
     title = models.CharField(max_length=512, blank=True, default="")
@@ -59,3 +59,29 @@ class Anime(models.Model):
     @staticmethod
     def validate_slug(value: str) -> bool:
         return bool(value and _SLUG.fullmatch(value))
+
+
+class Episode(models.Model):
+    """시리즈 내 1화. 캐논 프레임 경로는 `{slug}/episodes/{number}/frames`."""
+
+    anime = models.ForeignKey(
+        Anime,
+        on_delete=models.CASCADE,
+        related_name="episodes",
+    )
+    number = models.PositiveIntegerField(db_index=True)
+    title = models.CharField(max_length=512, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["anime_id", "number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["anime", "number"],
+                name="catalog_episode_anime_number_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.anime.slug} ep{self.number}"

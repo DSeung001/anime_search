@@ -30,6 +30,7 @@ def build_frame_payload(
     frame_index: int,
     frame_file: str,
     episode: int | None,
+    episode_id: int | None,
     genre_slugs: list[str],
     timestamp_sec: float,
 ) -> dict[str, Any]:
@@ -42,6 +43,8 @@ def build_frame_payload(
     }
     if episode is not None:
         payload["episode"] = int(episode)
+    if episode_id is not None:
+        payload["episode_id"] = int(episode_id)
     if genre_slugs:
         payload["genre"] = list(genre_slugs)
     return payload
@@ -89,6 +92,7 @@ def ensure_collection_and_indexes(*, vector_dim: int) -> None:
         ("job_public_id", PayloadSchemaType.KEYWORD),
         ("anime_id", PayloadSchemaType.KEYWORD),
         ("episode", PayloadSchemaType.INTEGER),
+        ("episode_id", PayloadSchemaType.INTEGER),
         ("genre", PayloadSchemaType.KEYWORD),
         ("frame_index", PayloadSchemaType.INTEGER),
         ("frame_file", PayloadSchemaType.KEYWORD),
@@ -143,11 +147,51 @@ def delete_points_for_job_public_id(job_public_id: uuid.UUID) -> None:
         logger.warning("Qdrant delete(filter) 실패: %s", exc)
 
 
+def delete_points_for_anime_episode(*, anime_slug: str, episode_number: int) -> None:
+    """해당 시리즈·화의 모든 벡터 삭제 (재임베딩 전)."""
+    pair = _get_client()
+    if pair[0] is None:
+        return
+    client, collection = pair
+    try:
+        from qdrant_client.models import (  # type: ignore[import-untyped]
+            FieldCondition,
+            Filter,
+            FilterSelector,
+            MatchValue,
+        )
+    except ImportError:
+        return
+
+    flt = Filter(
+        must=[
+            FieldCondition(key="anime_id", match=MatchValue(value=anime_slug)),
+            FieldCondition(key="episode", match=MatchValue(value=int(episode_number))),
+        ]
+    )
+    try:
+        if hasattr(client, "delete_points"):
+            client.delete_points(
+                collection_name=collection,
+                points_selector=FilterSelector(filter=flt),
+                wait=True,
+            )
+        else:
+            client.delete(
+                collection_name=collection,
+                points_selector=FilterSelector(filter=flt),
+                wait=True,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Qdrant delete(anime, episode) 실패: %s", exc)
+
+
 def upsert_job_frame_vectors(
     *,
     job_public_id: uuid.UUID,
     anime_slug: str,
     episode: int | None,
+    episode_id: int | None = None,
     genre_slugs: list[str],
     frame_indices: list[int],
     vectors: Any,
@@ -195,6 +239,7 @@ def upsert_job_frame_vectors(
             frame_index=fid,
             frame_file=frame_files[i],
             episode=episode,
+            episode_id=episode_id,
             genre_slugs=genre_slugs,
             timestamp_sec=float(timestamps[i]),
         )

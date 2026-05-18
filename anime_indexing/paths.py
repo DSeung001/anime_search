@@ -32,19 +32,21 @@ def resolve_frames_dir(relative_frames_dir: str) -> Path:
     return resolve_under_root(anime_media_root(), relative_frames_dir)
 
 
-def canonical_frames_key(anime_id: str) -> str:
+def canonical_frames_key(anime_id: str, episode_number: int) -> str:
     """
-    옵션 A: 디스크·객체 스토어 모두 `{anime_id}/frames` 가 leaf(JPG 평면)와 1:1.
+    디스크·객체 스토어 논리 키: `{anime_id}/episodes/{n}/frames` (JPG leaf).
     """
     aid = anime_id.strip()
     if not aid or ".." in aid or "/" in aid or "\\" in aid:
         raise ValueError("anime_id는 슬러그 한 세그먼트여야 합니다.")
-    return f"{aid}/frames"
+    if episode_number < 1:
+        raise ValueError("episode_number는 1 이상이어야 합니다.")
+    return f"{aid}/episodes/{int(episode_number)}/frames"
 
 
-def frames_leaf_under_media(anime_id: str) -> Path:
-    """CLIP 입력 leaf: ANIME_MEDIA_ROOT / anime_id / frames"""
-    return anime_media_root() / canonical_frames_key(anime_id)
+def frames_leaf_under_media(anime_id: str, episode_number: int) -> Path:
+    """CLIP 입력 leaf: ANIME_MEDIA_ROOT / {slug} / episodes / {n} / frames"""
+    return anime_media_root() / canonical_frames_key(anime_id, episode_number)
 
 
 def staging_frames_leaf(staging_rel_path: str) -> Path:

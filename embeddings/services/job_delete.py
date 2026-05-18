@@ -29,7 +29,7 @@ def _should_remove_canonical_frames(job: EmbeddingJob) -> bool:
         return True
     newer = (
         EmbeddingJob.objects.filter(
-            anime_id=job.anime_id,
+            episode_id=job.episode_id,
             status=EmbeddingJob.Status.DONE,
         )
         .exclude(pk=job.pk)
@@ -39,8 +39,8 @@ def _should_remove_canonical_frames(job: EmbeddingJob) -> bool:
     return not newer
 
 
-def _remove_canonical_frames(anime_slug: str) -> None:
-    leaf = frames_leaf_under_media(anime_slug)
+def _remove_canonical_frames(anime_slug: str, episode_number: int) -> None:
+    leaf = frames_leaf_under_media(anime_slug, episode_number)
     if not leaf.is_dir():
         return
     for p in leaf.glob("*.jpg"):
@@ -55,7 +55,11 @@ def _remove_canonical_frames(anime_slug: str) -> None:
 
 
 def delete_embedding_job(*, public_id: UUID) -> None:
-    job = EmbeddingJob.objects.select_related("anime").filter(public_id=public_id).first()
+    job = (
+        EmbeddingJob.objects.select_related("anime", "episode")
+        .filter(public_id=public_id)
+        .first()
+    )
     if job is None:
         raise JobDeleteError("작업을 찾을 수 없습니다.", status_code=404)
     if job.status == EmbeddingJob.Status.PROCESSING:
@@ -65,6 +69,6 @@ def delete_embedding_job(*, public_id: UUID) -> None:
     _remove_staging_job_root(public_id)
 
     if _should_remove_canonical_frames(job):
-        _remove_canonical_frames(job.anime.slug)
+        _remove_canonical_frames(job.anime.slug, job.episode.number)
 
     job.delete()

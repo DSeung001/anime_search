@@ -55,7 +55,7 @@
           <td><strong>{{ j.anime.slug }}</strong></td>
           <td><code class="tiny">{{ j.public_id }}</code></td>
           <td><span class="badge job-status-badge badge-{{ j.status }}">{{ j.get_status_display }}</span></td>
-          <td>{{ j.episode|default:"—" }}</td>
+          <td>{{ j.episode.number }}</td>
           <td style="font-size:0.82rem;color:var(--muted);">{{ j.created_at|date:"Y-m-d H:i" }}</td>
           <td class="errcell job-error-cell">{% if j.last_error %}<span class="job-error-text" title="{{ j.last_error }}">{{ j.last_error|truncatechars:40 }}</span>{% else %}—{% endif %}</td>
           <td>
