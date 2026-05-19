@@ -274,6 +274,8 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                 # Django의 chunks()로 스트리밍 저장(기본 청크 64KB)
                 for chunk in f.chunks():
                     out.write(chunk)
+                job.source_video_filename = dest_name
+                job.save(update_fields=["source_video_filename", "updated_at"])
 
         # TODO: DB·파일 저장을 transaction.atomic() 등으로 묶기
         # DB 커밋 후 Celery enqueue 예약(on_commit; atomic 블록 안이면 즉시 실행)

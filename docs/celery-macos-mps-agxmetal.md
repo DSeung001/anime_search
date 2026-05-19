@@ -14,22 +14,24 @@ Celery worker(`prefork`)에서 CLIP 임베딩을 돌릴 때 macOS Metal(MPS) 관
 
 ### 재현 절차
 
-1. Redis·Django·Celery worker를 평소와 같이 기동한다.
+1. Redis·Django·Celery worker를 평소와 같이 기동한다 (`.env`에 `QDRANT_URL` 등 설정).
 
    ```bash
    redis-server   # 또는 brew services start redis
    source .venv/bin/activate
+   cp .env.example .env   # 최초 1회
    celery -A anime_search worker -l info
    # 다른 터미널
    python3 manage.py runserver
    ```
 
-2. MPS를 쓰도록 환경을 맞춘다 (재현용).
+2. MPS를 쓰도록 `.env`를 맞춘다 (재현용).
 
-   ```bash
-   export ANIME_EMBED_DEVICE=mps   # 또는 auto
-   celery -A anime_search worker -l info
+   ```env
+   ANIME_EMBED_DEVICE=mps
    ```
+
+   worker를 재시작한다.
 
 3. `/jobs/`에서 임베딩 잡을 큐에 넣거나 API로 실행한다.
 
@@ -70,28 +72,25 @@ Celery는 예외를 태스크 안에서 잡아 DB만 실패 처리하므로, 아
 
 ### 2-1. 권장: CPU로 추론 (가장 단순)
 
-이 프로젝트는 macOS에서 기본값을 `cpu`로 두도록 되어 있다 (`anime_indexing/clip/device.py`). worker 쪽 환경만 맞추면 된다.
+이 프로젝트는 macOS에서 기본값을 `cpu`로 두도록 되어 있다 (`anime_indexing/clip/device.py`). `.env`에 다음을 넣고 worker를 재시작한다.
 
-```bash
-export ANIME_EMBED_DEVICE=cpu
-celery -A anime_search worker -l info
+```env
+ANIME_EMBED_DEVICE=cpu
 ```
 
 기동 로그에 `on cpu`가 보이면 설정이 반영된 것이다.
 
 ### 2-2. prefork 회피: threads / solo
 
-fork 이후 Metal을 쓰는 조합을 피하려면 풀을 바꾼다. **동시성은 1**을 권장한다 (`CELERY_WORKER_CONCURRENCY` 기본값도 1).
+fork 이후 Metal을 쓰는 조합을 피하려면 풀을 바꾼다. **동시성은 1**을 권장한다 (`CELERY_WORKER_CONCURRENCY` 기본값도 1). `.env`에 `ANIME_EMBED_DEVICE=cpu`를 둔 뒤:
 
 ```bash
-export ANIME_EMBED_DEVICE=cpu
 celery -A anime_search worker --pool=threads --concurrency=1 -l info
 ```
 
 또는:
 
 ```bash
-export ANIME_EMBED_DEVICE=cpu
 celery -A anime_search worker --pool=solo -l info
 ```
 
@@ -112,6 +111,8 @@ celery -A anime_search worker --pool=solo -l info
 3. `last_error`·worker 로그로 성공 여부 확인
 
 ### 환경 변수 요약
+
+프로젝트 루트 `.env`에 설정 (템플릿: `.env.example`).
 
 | 변수 | macOS 권장 | 설명 |
 |------|------------|------|

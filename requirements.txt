@@ -1,6 +1,9 @@
 # Django
 Django>=6.0,<7
 
+# 설정 (.env)
+python-dotenv>=1.0
+
 # 비동기 잡 큐 (broker/result: Redis)
 celery>=5.3,<6
 redis>=5.0,<6
@@ -18,3 +21,6 @@ qdrant-client>=1.7
 
 # 동영상 → 프레임 (시스템 ffmpeg 없이 동봉 바이너리 사용)
 imageio-ffmpeg>=0.5
+
+# Discovery 채팅 (Gemini — google.genai SDK)
+google-genai>=1.0

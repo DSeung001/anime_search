@@ -58,6 +58,12 @@ class EmbeddingJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+    source_video_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="스테이징 input/ 동영상 파일명 (공개 검색 URL용)",
+    )
 
     class Meta:
         ordering = ["-created_at"]

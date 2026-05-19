@@ -29,6 +29,7 @@ requirements.txt.lock
 .AppleDouble
 .LSOverride
 
+.env
 
 anime_indexing/weights/
 # 또는

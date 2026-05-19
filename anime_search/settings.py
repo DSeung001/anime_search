@@ -13,8 +13,13 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# 프로젝트 루트 `.env` (gitignore). 로컬 설정은 .env 사용을 권장합니다.
+load_dotenv(BASE_DIR / ".env", override=True)
 
 
 def _path_from_env(name: str, default: Path) -> Path:
@@ -82,6 +87,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'catalog',
     'embeddings',
+    'discovery',
 ]
 
 MIDDLEWARE = [
@@ -179,3 +185,17 @@ CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "").strip(
     "yes",
 )
 
+
+
+# --- Discovery (공개 장면 검색·채팅)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+SEARCH_CELERY_TIMEOUT_SEC = int(os.environ.get("SEARCH_CELERY_TIMEOUT_SEC", "120"))
+SEARCH_RATE_LIMIT_PER_MIN = int(os.environ.get("SEARCH_RATE_LIMIT_PER_MIN", "20"))
+CHAT_MAX_HISTORY = int(os.environ.get("CHAT_MAX_HISTORY", "20"))
+DISCOVERY_PROTECT_DONE_JOBS = os.environ.get("DISCOVERY_PROTECT_DONE_JOBS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+SEGMENT_MERGE_GAP_SEC = float(os.environ.get("SEGMENT_MERGE_GAP_SEC", "1.5"))
