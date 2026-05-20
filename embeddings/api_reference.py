@@ -77,12 +77,6 @@ def endpoint_catalog() -> list[dict[str, Any]]:
         },
         {
             "method": "POST",
-            "path": "/api/embed/search/",
-            "summary": "텍스트 q 벡터 검색. genre_slugs·anime_id·episode 가 있으면 Qdrant filter 결합, 없으면 순수 벡터 유사도. genre_slugs 는 JSON 배열만.",
-            "body": {"q": "질의 문장", "limit": 20, "anime_id": "my_show", "episode": 1, "genre_slugs": ["action"]},
-        },
-        {
-            "method": "POST",
             "path": "/api/embed/run/",
             "summary": "캐논 미디어 기준 leaf 디렉터리 동기 CLIP 임베딩(점검용).",
             "body": {"relative_frames_dir": "my_show/frames"},

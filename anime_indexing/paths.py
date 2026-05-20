@@ -5,10 +5,6 @@ from pathlib import Path
 from django.conf import settings
 
 
-def anime_media_root() -> Path:
-    return Path(settings.ANIME_MEDIA_ROOT).resolve()
-
-
 def anime_staging_root() -> Path:
     return Path(settings.ANIME_STAGING_ROOT).resolve()
 

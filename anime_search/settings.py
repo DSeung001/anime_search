@@ -209,7 +209,7 @@ DISCOVERY_PROTECT_DONE_JOBS = os.environ.get("DISCOVERY_PROTECT_DONE_JOBS", "tru
 )
 SEGMENT_MERGE_GAP_SEC = float(os.environ.get("SEGMENT_MERGE_GAP_SEC", "1.5"))
 SEARCH_MIN_SCORE = float(os.environ.get("SEARCH_MIN_SCORE", "0.24"))
-SEARCH_MAX_SCENES = int(os.environ.get("SEARCH_MAX_SCENES", "5"))
+SEARCH_MAX_SCENES = int(os.environ.get("SEARCH_MAX_SCENES", "12"))
 SEARCH_MERGE_MAX_SEGMENTS = int(os.environ.get("SEARCH_MERGE_MAX_SEGMENTS", "12"))
 PIPELINE_TRACE_ENABLED = os.environ.get("PIPELINE_TRACE_ENABLED", "true").strip().lower() in (
     "1",

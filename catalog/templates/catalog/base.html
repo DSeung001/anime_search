@@ -16,6 +16,7 @@
       <a href="{% url 'catalog_genre_list' %}">장르</a>
       <a href="{% url 'catalog_anime_upload' %}">업로드</a>
       <a href="{% url 'catalog_jobs' %}">잡</a>
+      <a href="{% url 'discovery_trace_list' %}"{% if request.resolver_match.url_name == 'discovery_trace_list' or request.resolver_match.url_name == 'discovery_trace_detail' %} class="is-active"{% endif %}>Trace</a>
     </nav>
   </div>
 </header>

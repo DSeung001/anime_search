@@ -3,21 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from django.conf import settings
+from anime_indexing.vectors.qdrant_client import get_qdrant_client_and_collection
 
 logger = logging.getLogger(__name__)
-
-
-def _client():
-    url = getattr(settings, "QDRANT_URL", "") or ""
-    if not url:
-        return None, None
-    try:
-        from qdrant_client import QdrantClient  # type: ignore[import-untyped]
-    except ImportError:
-        return None, None
-    client = QdrantClient(url=url, api_key=settings.QDRANT_API_KEY or None)
-    return client, settings.QDRANT_COLLECTION
 
 
 def build_search_filter(
@@ -54,30 +42,32 @@ def search_segments(
     episode: int | None = None,
     genre_slugs: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    pair = _client()
-    if pair[0] is None:
+    client, collection = get_qdrant_client_and_collection()
+    if client is None or collection is None:
         return []
-    client, collection = pair
     flt = build_search_filter(anime_slug=anime_slug, episode=episode, genre_slugs=genre_slugs)
+    lim = min(max(1, limit), 100)
+
     try:
-        hits = client.search(
+        response = client.query_points(
             collection_name=collection,
-            query_vector=query_vector,
-            limit=min(max(1, limit), 100),
+            query=query_vector,
+            limit=lim,
             query_filter=flt,
             with_payload=True,
         )
+        points = list(response.points or [])
     except Exception as exc:  # noqa: BLE001
         logger.warning("Qdrant search 실패: %s", exc)
         return []
 
     out: list[dict[str, Any]] = []
-    for h in hits:
+    for point in points:
         out.append(
             {
-                "id": str(h.id),
-                "score": float(h.score),
-                "payload": dict(h.payload or {}),
+                "id": str(point.id),
+                "score": float(point.score or 0.0),
+                "payload": dict(point.payload or {}),
             }
         )
     return out

@@ -9,8 +9,9 @@ from catalog.services.episode import get_or_create_episode
 from embeddings.models import EmbeddingJob
 
 
-def make_episode(anime: Anime, number: int = 1) -> Episode:
-    return get_or_create_episode(anime=anime, number=number)
+def make_episode(anime: Anime, number: int = 1, *, title: str | None = None) -> Episode:
+    ep_title = (title or "").strip() or f"{number}화"
+    return get_or_create_episode(anime=anime, number=number, title=ep_title)
 
 
 def make_job(anime: Anime, *, episode_number: int = 1, **kwargs: object) -> EmbeddingJob:

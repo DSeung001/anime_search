@@ -11,7 +11,7 @@ from django.conf import settings
 
 logger = logging.getLogger("anime_search.pipeline")
 
-TraceKind = Literal["search", "indexing"]
+TraceKind = Literal["search", "indexing", "import"]
 TraceStatus = Literal["ok", "error", "empty"]
 
 
@@ -73,6 +73,20 @@ class PipelineTracer:
     ) -> PipelineTracer:
         return cls(
             kind="indexing",
+            trace_id=trace_id or uuid.uuid4(),
+            job_public_id=job_public_id,
+            _enabled=trace_enabled(),
+        )
+
+    @classmethod
+    def start_import(
+        cls,
+        *,
+        job_public_id: UUID,
+        trace_id: UUID | None = None,
+    ) -> PipelineTracer:
+        return cls(
+            kind="import",
             trace_id=trace_id or uuid.uuid4(),
             job_public_id=job_public_id,
             _enabled=trace_enabled(),

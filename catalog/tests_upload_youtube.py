@@ -27,7 +27,9 @@ class AnimeUploadYoutubeTests(TestCase):
                 reverse("catalog_anime_upload"),
                 {
                     "anime_slug": self.anime.slug,
+                    "title": self.anime.title,
                     "episode": "1",
+                    "episode_title": "1화 테스트",
                     "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
                 },
                 headers={
@@ -53,9 +55,27 @@ class AnimeUploadYoutubeTests(TestCase):
             reverse("catalog_anime_upload"),
             {
                 "anime_slug": self.anime.slug,
+                "title": self.anime.title,
                 "episode": "1",
+                "episode_title": "1화 테스트",
                 "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
                 "video": SimpleUploadedFile("a.mp4", b"x", content_type="video/mp4"),
+            },
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json",
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_rejects_missing_series_title(self) -> None:
+        resp = self.client.post(
+            reverse("catalog_anime_upload"),
+            {
+                "anime_slug": self.anime.slug,
+                "episode": "1",
+                "episode_title": "1화",
+                "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
             },
             headers={
                 "X-Requested-With": "XMLHttpRequest",

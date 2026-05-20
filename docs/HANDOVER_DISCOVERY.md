@@ -163,7 +163,7 @@ def run_scene_search(
 - 인접 프레임 간격 > **1.5초** 이면 새 구간
 - 구간별 **최고 score** 프레임 = 대표 썸네일·`peak_sec`
 - score 내림차순 상위 **12**개 후보만 병합 (`SEARCH_MERGE_MAX_SEGMENTS`)
-- `SEARCH_MIN_SCORE` 미만 탈락, 상위 **5**개만 UI (`SEARCH_MAX_SCENES`)
+- `SEARCH_MIN_SCORE` 미만 탈락, 상위 **12**개만 UI (`SEARCH_MAX_SCENES`)
 
 ### 4.4 `discovery/services/presenter.py`
 
@@ -172,13 +172,14 @@ def run_scene_search(
 
 ```python
 {
-  "anime_id": "one_piece",
-  "anime_title": "원피스",  # Anime.title or slug
+  "anime_title": "원피스",
   "episode": 3,
-  "start_sec": 412.5,
-  "end_sec": 418.0,
+  "episode_title": "…",
+  "display_label": "(원피스) 3화 … 6:55",
   "peak_sec": 415.2,
+  "time_label": "6:55",
   "score": 0.82,
+  "similarity_label": "82%(score: 0.82)",
   "frame_file": "frame_001234.jpg",
   "job_public_id": "uuid",
   "thumbnail_url": "/api/search/thumb/<job>/<frame>.jpg",
@@ -248,7 +249,7 @@ if job.status == EmbeddingJob.Status.DONE and settings.DISCOVERY_PROTECT_DONE_JO
 | GET | `/api/search/thumb/...` | 썸네일 |
 | GET | `/api/search/video/...` | 영상 스트리밍 |
 
-내부 유지: `POST /api/embed/search/` (`X-Internal-Key` / DEBUG) — 브라우저에 키 노출 금지.
+장면 검색은 Discovery 채팅 API(`/search/api/chat/`)만 사용. (구 `POST /api/embed/search/` 제거)
 
 ### POST `/api/search/chat/` 응답 예
 
@@ -277,7 +278,7 @@ if job.status == EmbeddingJob.Status.DONE and settings.DISCOVERY_PROTECT_DONE_JO
 | `DISCOVERY_PROTECT_DONE_JOBS` | `true` | DONE 잡 삭제 차단 |
 | `SEGMENT_MERGE_GAP_SEC` | `1.5` | 구간 병합 간격(초) |
 | `SEARCH_MIN_SCORE` | `0.24` | 이 점수 미만 장면 탈락 (cosine) |
-| `SEARCH_MAX_SCENES` | `5` | UI에 표시할 최대 장면 수 |
+| `SEARCH_MAX_SCENES` | `12` | UI에 표시할 최대 장면 수 |
 | `SEARCH_MERGE_MAX_SEGMENTS` | `12` | 병합 후보 상한 (필터 전) |
 | `QDRANT_URL` | — | 없으면 검색 hit 0 (§7.3) |
 | `QDRANT_API_KEY` | — | 클라우드 Qdrant |
@@ -564,7 +565,7 @@ python manage.py runserver
 
 | 파일 | 역할 |
 |------|------|
-| [`embeddings/views.py`](../embeddings/views.py) `search_segments_api` | 내부용 검색 (웹에서 CLIP 직접 — **공개 경로에서는 사용하지 말 것**) |
+| [`anime_indexing/vectors/qdrant_client.py`](../anime_indexing/vectors/qdrant_client.py) | Qdrant 클라이언트·설정 공통 |
 | [`anime_indexing/vectors/qdrant_search.py`](../anime_indexing/vectors/qdrant_search.py) | Qdrant search |
 | [`anime_indexing/clip/vision.py`](../anime_indexing/clip/vision.py) `encode_text_query` | 검색 벡터 |
 | [`embeddings/tasks.py`](../embeddings/tasks.py) | 인덱싱 Celery |

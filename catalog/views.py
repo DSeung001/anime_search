@@ -260,11 +260,16 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                 request, "시리즈 slug는 영문·숫자·_- 만 1~255자여야 합니다."
             )
 
-        # 애니메이션이 없으면 새로 만들고 있으면 그대로 사용
         title = (request.POST.get("title") or "").strip()
+        if not title:
+            return _upload_form_error(request, "시리즈 제목은 필수입니다.")
+
+        episode_title = (request.POST.get("episode_title") or "").strip()
+        if not episode_title:
+            return _upload_form_error(request, "화 제목은 필수입니다.")
+
         anime, _ = Anime.objects.get_or_create(slug=slug, defaults={"title": title})
-        # title은 선택(없으면 slug만으로 생성)
-        if title:
+        if anime.title != title:
             anime.title = title
             anime.save(update_fields=["title", "updated_at"])
 
@@ -296,7 +301,11 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
             except ValueError as exc:
                 return _upload_form_error(request, str(exc))
 
-        episode_row = get_or_create_episode(anime=anime, number=episode_number)
+        episode_row = get_or_create_episode(
+            anime=anime,
+            number=episode_number,
+            title=episode_title,
+        )
         job = EmbeddingJob.objects.create(
             anime=anime,
             episode=episode_row,

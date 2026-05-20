@@ -13,11 +13,11 @@
     <div>
       <label class="f">시리즈 slug</label>
       <input type="text" name="anime_slug" required pattern="[a-zA-Z0-9_-]{1,255}" list="anime-slugs" autocomplete="off">
-      <datalist id="anime-slugs">{% for a in animes %}<option value="{{ a.slug }}">{{ a.slug }}</option>{% endfor %}</datalist>
+      <datalist id="anime-slugs">{% for a in animes %}<option value="{{ a.slug }}" label="{{ a.title }}"></option>{% endfor %}</datalist>
     </div>
     <div>
-      <label class="f">표시 제목 (선택)</label>
-      <input type="text" name="title" maxlength="512" placeholder="option">
+      <label class="f">시리즈 제목 (필수)</label>
+      <input type="text" name="title" maxlength="512" required placeholder="예: 장송의 프리렌">
     </div>
     <div style="grid-column:1/-1;">
       <label class="f">장르</label>
@@ -30,6 +30,10 @@
     <div>
       <label class="f">episode (화수, 필수)</label>
       <input type="number" name="episode" min="1" step="1" required placeholder="1">
+    </div>
+    <div>
+      <label class="f">화 제목 (필수)</label>
+      <input type="text" name="episode_title" maxlength="512" required placeholder="예: 1화 · 여행의 시작">
     </div>
     <div id="source-pair" class="source-pair">
       <div class="source-pair-head">
@@ -80,10 +84,14 @@
   </form>
 </section>
 
-<section id="upload-result" class="card" hidden>
+<section id="upload-result" class="card" hidden data-trace-list-url="{% url 'discovery_trace_list' %}">
   <h2>업로드 결과</h2>
   <p id="upload-result-msg" class="hint"></p>
   <p><code id="upload-result-id"></code></p>
+  <p id="upload-trace-links" class="hint" hidden>
+    <a id="upload-trace-import" href="#">가져오기 trace</a>
+    · <a id="upload-trace-indexing" href="#">색인 trace</a>
+  </p>
   <video id="upload-preview" controls playsinline style="width:100%;max-height:480px;margin-top:0.75rem;background:#000;border-radius:var(--radius);"></video>
   <p class="hint" style="margin-top:0.75rem;">잡 처리를 시작하면 스테이징 동영상이 삭제되어 미리보기가 사라질 수 있습니다.</p>
 </section>

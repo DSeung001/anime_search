@@ -3,10 +3,12 @@ from __future__ import annotations
 import time
 
 from django.conf import settings
+from django.http import HttpRequest
 
 from anime_indexing.observability.pipeline_tracer import PipelineTracer, summarize_hits
 from anime_indexing.vectors.qdrant_search import search_segments
 from anime_indexing.vectors.qdrant_upsert import qdrant_is_configured
+from discovery.services.presenter import present_scenes
 from discovery.services.query_translate import translate_search_query_for_clip
 from discovery.services.scene_filter import filter_segments_for_display
 from discovery.services.segment_merge import merge_frame_hits
@@ -43,9 +45,9 @@ def run_scene_search(
     genre_slugs: list[str] | None = None,
     limit: int = 50,
     tracer: PipelineTracer | None = None,
-    request=None,
+    request: HttpRequest,
 ) -> tuple[str, list[dict]]:
-    """Returns (clip_query_en, scene_cards). Presenter runs when request is set."""
+    """Returns (clip_query_en, scene_cards)."""
     ko = (search_query or "").strip()
     if tracer:
         tracer.stage(
@@ -100,21 +102,17 @@ def run_scene_search(
         tracer.stage(
             "filter",
             min_score=float(getattr(settings, "SEARCH_MIN_SCORE", 0.24)),
-            max_scenes=int(getattr(settings, "SEARCH_MAX_SCENES", 5)),
+            max_scenes=int(getattr(settings, "SEARCH_MAX_SCENES", 12)),
             kept=len(segments),
             dropped=filter_dropped,
         )
 
-    scenes: list[dict] = []
-    if request is not None:
-        from discovery.services.presenter import present_scenes
-
-        scenes, present_dropped = present_scenes(segments, request)
-        if tracer:
-            tracer.stage(
-                "present",
-                scene_count=len(scenes),
-                dropped=present_dropped,
-            )
+    scenes, present_dropped = present_scenes(segments, request)
+    if tracer:
+        tracer.stage(
+            "present",
+            scene_count=len(scenes),
+            dropped=present_dropped,
+        )
 
     return clip_query, scenes

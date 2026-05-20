@@ -1,8 +1,11 @@
 {% extends "catalog/base.html" %}
+{% load static %}
 
 {% block title %}Trace {{ trace.id }}{% endblock %}
 
 {% block main %}
+<link rel="stylesheet" href="{% static 'discovery/json-formatter.min.css' %}">
+<link rel="stylesheet" href="{% static 'discovery/trace_detail.css' %}">
 <h1 class="page-title">Trace 상세</h1>
 <p class="lead">
   <strong>{{ trace.kind }}</strong> · {{ trace.status }} · {{ trace.created_at }}
@@ -14,25 +17,39 @@
   <li>session: <code>{{ trace.session_id }}</code></li>
   {% endif %}
   {% if trace.job_public_id %}
-  <li>job: <code>{{ trace.job_public_id }}</code></li>
+  <li>job: <code>{{ trace.job_public_id }}</code>
+    <a href="{% url 'discovery_trace_list' %}?kind=indexing&amp;job_public_id={{ trace.job_public_id }}">색인 trace 목록</a>
+  </li>
   {% endif %}
 </ul>
 
 <h2>단계</h2>
 {% for stage in stages %}
-<details style="margin-bottom: 0.5rem;" {% if forloop.first %}open{% endif %}>
+<details class="trace-stage" style="margin-bottom: 0.5rem;" {% if forloop.first %}open{% endif %}>
   <summary><strong>{{ stage.name }}</strong></summary>
-  <pre style="white-space: pre-wrap; font-size: 0.85rem; overflow: auto;">{{ stage.data_pretty }}</pre>
+  <div class="json-tree trace-json-mount" data-stage-index="{{ forloop.counter0 }}"></div>
 </details>
 {% empty %}
 <p>단계 데이터 없음</p>
 {% endfor %}
 
 <h2>전체 payload</h2>
-<pre style="white-space: pre-wrap; font-size: 0.8rem; overflow: auto; max-height: 40rem;">{{ payload_pretty }}</pre>
+<div class="trace-json-toolbar">
+  <button type="button" id="trace-copy-json" class="btn btn-ghost btn-mini">Copy JSON</button>
+  <button type="button" id="trace-expand-all" class="btn btn-ghost btn-mini">Expand all</button>
+  <button type="button" id="trace-collapse-all" class="btn btn-ghost btn-mini">Collapse all</button>
+</div>
+<div id="trace-payload-root" class="trace-json-mount trace-json-mount--payload"></div>
 
 <p style="margin-top:1rem;">
   <a href="{% url 'discovery_trace_list' %}">목록</a>
   · <a href="{% url 'discovery_search' %}">검색</a>
 </p>
+
+{% endblock %}
+
+{% block extra_scripts %}
+{{ trace.payload|json_script:"trace-payload" }}
+<script src="{% static 'discovery/json-formatter.min.js' %}"></script>
+<script src="{% static 'discovery/trace_detail.js' %}"></script>
 {% endblock %}

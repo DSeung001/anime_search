@@ -4,23 +4,15 @@ import logging
 import uuid
 from typing import Any
 
-from django.conf import settings
-
 from anime_indexing.constants import QDRANT_POINT_NAMESPACE_UUID
+from anime_indexing.vectors.qdrant_client import (
+    get_qdrant_client_and_collection,
+    qdrant_is_configured,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def qdrant_is_configured() -> bool:
-    """``QDRANT_URL`` 이 있고 ``qdrant-client`` 를 import 할 수 있을 때만 True."""
-    url = getattr(settings, "QDRANT_URL", "") or ""
-    if not url:
-        return False
-    try:
-        import qdrant_client  # noqa: F401
-    except ImportError:
-        return False
-    return True
+__all__ = ["qdrant_is_configured"]
 
 
 def build_frame_payload(
@@ -54,25 +46,11 @@ def frame_point_uuid(job_public_id: uuid.UUID, frame_index: int) -> uuid.UUID:
     return uuid.uuid5(QDRANT_POINT_NAMESPACE_UUID, f"{job_public_id}:{frame_index}")
 
 
-def _get_client():
-    url = getattr(settings, "QDRANT_URL", "") or ""
-    if not url:
-        return None, None
-    try:
-        from qdrant_client import QdrantClient  # type: ignore[import-untyped]
-    except ImportError:
-        logger.warning("QDRANT_URL이 설정됐지만 qdrant-client가 설치되지 않았습니다.")
-        return None, None
-    client = QdrantClient(url=url, api_key=settings.QDRANT_API_KEY or None)
-    return client, settings.QDRANT_COLLECTION
-
-
 def ensure_collection_and_indexes(*, vector_dim: int) -> None:
     """컬렉션 생성 및 필터용 payload 인덱스(멱등)."""
-    pair = _get_client()
-    if pair[0] is None:
+    client, collection = get_qdrant_client_and_collection()
+    if client is None or collection is None:
         return
-    client, collection = pair
     try:
         from qdrant_client.models import (  # type: ignore[import-untyped]
             Distance,
@@ -108,10 +86,9 @@ def ensure_collection_and_indexes(*, vector_dim: int) -> None:
 
 
 def delete_points_for_job_public_id(job_public_id: uuid.UUID) -> None:
-    pair = _get_client()
-    if pair[0] is None:
+    client, collection = get_qdrant_client_and_collection()
+    if client is None or collection is None:
         return
-    client, collection = pair
     try:
         from qdrant_client.models import (  # type: ignore[import-untyped]
             FieldCondition,
@@ -149,10 +126,9 @@ def delete_points_for_job_public_id(job_public_id: uuid.UUID) -> None:
 
 def delete_points_for_anime_episode(*, anime_slug: str, episode_number: int) -> None:
     """해당 시리즈·화의 모든 벡터 삭제 (재임베딩 전)."""
-    pair = _get_client()
-    if pair[0] is None:
+    client, collection = get_qdrant_client_and_collection()
+    if client is None or collection is None:
         return
-    client, collection = pair
     try:
         from qdrant_client.models import (  # type: ignore[import-untyped]
             FieldCondition,
@@ -204,10 +180,9 @@ def upsert_job_frame_vectors(
     ``vectors``: ``(N, D)`` float32, 행마다 L2 정규화된 CLIP 임베딩.
     나머지 인자는 길이 ``N`` 의 동일 순서.
     """
-    pair = _get_client()
-    if pair[0] is None:
+    client, collection = get_qdrant_client_and_collection()
+    if client is None or collection is None:
         return
-    client, collection = pair
     try:
         from qdrant_client.models import PointStruct  # type: ignore[import-untyped]
     except ImportError:

@@ -5,8 +5,9 @@ import re
 from typing import Final
 
 from django.conf import settings
-from google import genai
 from google.genai import types
+
+from discovery.services.gemini_client import get_gemini_client, get_gemini_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +28,6 @@ def _ascii_ratio(text: str) -> float:
     return ascii_chars / max(len(text), 1)
 
 
-def _gemini_client() -> genai.Client:
-    api_key = getattr(settings, "GEMINI_API_KEY", "") or ""
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY가 설정되지 않았습니다.")
-    return genai.Client(api_key=api_key)
-
-
-def _model_id() -> str:
-    return getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
-
-
 def translate_search_query_for_clip(search_query: str) -> str:
     """CLIP용 영어 시각 묘사로 변환. 실패 시 원문 반환."""
     raw = (search_query or "").strip()
@@ -51,9 +41,9 @@ def translate_search_query_for_clip(search_query: str) -> str:
         return raw
 
     try:
-        client = _gemini_client()
+        client = get_gemini_client()
         response = client.models.generate_content(
-            model=_model_id(),
+            model=get_gemini_model_id(),
             contents=raw,
             config=types.GenerateContentConfig(
                 system_instruction=_TRANSLATE_SYSTEM,

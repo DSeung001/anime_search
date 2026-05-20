@@ -6,11 +6,11 @@ from uuid import UUID
 
 from django.conf import settings
 from django.http import HttpRequest
-from google import genai
 from google.genai import types
 
 from anime_indexing.observability.pipeline_tracer import PipelineTracer
 from discovery.models import ChatMessage, ChatSession
+from discovery.services.gemini_client import get_gemini_client, get_gemini_model_id
 from discovery.services.retrieval import SearchPipelineError, run_scene_search
 
 SYSTEM_PROMPT = """당신은 애니메이션 장면 검색 도우미입니다.
@@ -152,25 +152,17 @@ def _build_user_prompt(session: ChatSession, user_message: str) -> str:
     return f"이전 대화:\n{ctx}\n\n현재 사용자 메시지: {user_message}"
 
 
-def _gemini_client() -> genai.Client:
-    api_key = getattr(settings, "GEMINI_API_KEY", "") or ""
-    if not api_key:
-        raise ChatOrchestratorError("GEMINI_API_KEY가 설정되지 않았습니다.")
-    return genai.Client(api_key=api_key)
-
-
-def _model_id() -> str:
-    return getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
-
-
 def run_chat_turn(
     *,
     session: ChatSession,
     user_message: str,
     request: HttpRequest,
 ) -> tuple[str, list[dict[str, Any]]]:
-    client = _gemini_client()
-    model = _model_id()
+    try:
+        client = get_gemini_client()
+    except RuntimeError as exc:
+        raise ChatOrchestratorError(str(exc)) from exc
+    model = get_gemini_model_id()
 
     ChatMessage.objects.create(session=session, role=ChatMessage.Role.USER, content=user_message)
 

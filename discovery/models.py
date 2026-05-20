@@ -35,6 +35,7 @@ class PipelineTrace(models.Model):
     class Kind(models.TextChoices):
         SEARCH = "search", "검색"
         INDEXING = "indexing", "색인"
+        IMPORT = "import", "가져오기"
 
     class Status(models.TextChoices):
         OK = "ok", "성공"

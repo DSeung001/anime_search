@@ -11,6 +11,7 @@ from django.urls import reverse
 from anime_indexing.paths import staging_frames_leaf, staging_input_dir_for_job_frames
 from anime_indexing.video.extract import VIDEO_EXTENSIONS, find_first_video
 from discovery.services.segment_merge import SceneSegment
+from discovery.services.similarity_display import build_display_label, format_similarity_label
 from embeddings.models import EmbeddingJob
 
 
@@ -87,18 +88,33 @@ def _present_one(
     if not video_name or Path(video_name).suffix.lower() not in VIDEO_EXTENSIONS:
         return None, "no_video"
 
-    anime = job.anime
-    title = (anime.title or "").strip() or anime.slug
+    anime_title = (job.anime.title or "").strip()
+    if not anime_title:
+        return None, "missing_anime_title"
+
+    episode_title = (job.episode.title or "").strip()
+    if not episode_title:
+        return None, "missing_episode_title"
+
+    episode_num = segment.episode if segment.episode is not None else job.episode.number
+    time_label = _fmt_time(segment.peak_sec)
+    display_label = build_display_label(
+        anime_title=anime_title,
+        episode=episode_num,
+        episode_title=episode_title,
+        time_label=time_label,
+    )
+
     return (
         {
-            "anime_id": segment.anime_id or anime.slug,
-            "anime_title": title,
-            "episode": segment.episode if segment.episode is not None else job.episode.number,
-            "start_sec": round(segment.start_sec, 2),
-            "end_sec": round(segment.end_sec, 2),
+            "anime_title": anime_title,
+            "episode": episode_num,
+            "episode_title": episode_title,
+            "display_label": display_label,
             "peak_sec": round(segment.peak_sec, 2),
-            "time_label": _fmt_time(segment.peak_sec),
+            "time_label": time_label,
             "score": round(segment.score, 4),
+            "similarity_label": format_similarity_label(segment.score),
             "frame_file": frame_file,
             "job_public_id": pid,
             "thumbnail_url": request.build_absolute_uri(
@@ -108,7 +124,6 @@ def _present_one(
                 reverse("discovery_video", kwargs={"job_id": job.public_id, "filename": video_name})
             ),
             "video_start_sec": round(segment.peak_sec, 2),
-            "genre": segment.genre,
         },
         None,
     )
@@ -129,7 +144,6 @@ def present_scenes(
             dropped.append(
                 {
                     "job_public_id": seg.job_public_id,
-                    "anime_id": seg.anime_id,
                     "episode": seg.episode,
                     "peak_sec": round(seg.peak_sec, 2),
                     "score": round(seg.score, 4),

@@ -1,9 +1,15 @@
 (function () {
+  "use strict";
+
+
   const threadEl = document.getElementById("chat-thread");
   const inputEl = document.getElementById("chat-input");
   const sendBtn = document.getElementById("chat-send");
   const sceneList = document.getElementById("scene-list");
   const errEl = document.getElementById("chat-error");
+  const modalEl = document.getElementById("scene-video-modal");
+  const modalVideo = document.getElementById("scene-modal-video");
+  const modalCaption = document.getElementById("scene-modal-caption");
   let sessionId = sessionStorage.getItem("discovery_session_id") || "";
   let typingEl = null;
 
@@ -53,9 +59,57 @@
     typingEl = null;
   }
 
-  function formatScore(score) {
-    if (score == null || score === "") return "-";
-    return Number(score).toFixed(3);
+  function sceneLabel(s) {
+    if (s.display_label) return s.display_label;
+    const title = s.anime_title || "알 수 없음";
+    const ep = s.episode != null ? s.episode + "화" : "?화";
+    const epTitle = s.episode_title || "";
+    const time = s.time_label || "";
+    return "(" + title + ") " + ep + " " + epTitle + " " + time;
+  }
+
+  function closeSceneModal() {
+    if (!modalEl) return;
+    modalEl.hidden = true;
+    modalEl.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("scene-modal-open");
+    if (modalVideo) {
+      modalVideo.pause();
+      modalVideo.removeAttribute("src");
+      modalVideo.load();
+    }
+  }
+
+  function openSceneModal(videoUrl, startSec, caption) {
+    if (!modalEl || !modalVideo) return;
+    modalEl.hidden = false;
+    modalEl.setAttribute("aria-hidden", "false");
+    document.body.classList.add("scene-modal-open");
+    if (modalCaption) {
+      modalCaption.textContent = caption || "";
+    }
+    const start = Number(startSec) || 0;
+    modalVideo.src = videoUrl;
+    const onMeta = function () {
+      modalVideo.currentTime = start;
+      modalVideo.removeEventListener("loadedmetadata", onMeta);
+      modalVideo.play().catch(function () {});
+    };
+    modalVideo.addEventListener("loadedmetadata", onMeta);
+    if (modalVideo.readyState >= 1) {
+      onMeta();
+    }
+  }
+
+  if (modalEl) {
+    modalEl.querySelectorAll("[data-close]").forEach(function (el) {
+      el.addEventListener("click", closeSceneModal);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modalEl.hidden) {
+        closeSceneModal();
+      }
+    });
   }
 
   function renderScenes(scenes) {
@@ -69,47 +123,38 @@
       const row = document.createElement("article");
       row.className = "scene-row";
 
-      const seriesTitle = s.anime_title || s.anime_id || "알 수 없음";
-      const epLabel = s.episode != null ? s.episode + "화" : "-";
-      const timeLabel = s.time_label || "-";
-      const videoHref =
-        (s.video_url || "") + "#t=" + (s.video_start_sec != null ? s.video_start_sec : 0);
+      const label = sceneLabel(s);
+      const startSec = s.video_start_sec != null ? s.video_start_sec : 0;
 
-      const thumbLink = document.createElement("a");
-      thumbLink.className = "scene-row-thumb";
-      thumbLink.href = videoHref;
-      thumbLink.title = seriesTitle + " " + epLabel + " " + timeLabel + " 재생";
+      const thumbBtn = document.createElement("button");
+      thumbBtn.type = "button";
+      thumbBtn.className = "scene-row-thumb";
+      thumbBtn.title = label + " 재생";
       const img = document.createElement("img");
       img.src = s.thumbnail_url;
-      img.alt = seriesTitle + " " + epLabel;
+      img.alt = label;
       img.loading = "lazy";
-      thumbLink.appendChild(img);
+      thumbBtn.appendChild(img);
+      thumbBtn.addEventListener("click", function () {
+        if (s.video_url) {
+          openSceneModal(s.video_url, startSec, label);
+        }
+      });
 
       const body = document.createElement("div");
       body.className = "scene-row-body";
 
       const titleEl = document.createElement("h3");
       titleEl.className = "scene-row-title";
-      titleEl.textContent = seriesTitle;
-
-      const meta = document.createElement("ul");
-      meta.className = "scene-row-meta";
-      meta.innerHTML =
-        "<li><span>화</span> <strong>" +
-        epLabel +
-        "</strong></li>" +
-        "<li><span>시각</span> <strong>" +
-        timeLabel +
-        "</strong></li>";
+      titleEl.textContent = label;
 
       body.appendChild(titleEl);
-      body.appendChild(meta);
 
       const scoreEl = document.createElement("span");
       scoreEl.className = "scene-row-score";
-      scoreEl.textContent = formatScore(s.score);
+      scoreEl.textContent = s.similarity_label || "-";
 
-      row.appendChild(thumbLink);
+      row.appendChild(thumbBtn);
       row.appendChild(body);
       row.appendChild(scoreEl);
       sceneList.appendChild(row);

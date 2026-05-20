@@ -19,5 +19,4 @@ urlpatterns = [
     ),
     path("api/embed/jobs/<uuid:public_id>/", views.get_embedding_job, name="embeddings_job_detail"),
     path("api/embed/path-help/", views.embed_path_help, name="embeddings_path_help"),
-    path("api/embed/search/", views.search_segments_api, name="embeddings_search"),
 ]

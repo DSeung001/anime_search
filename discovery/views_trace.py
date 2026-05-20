@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from uuid import UUID
 
 from django.http import HttpRequest, HttpResponse
@@ -19,7 +18,11 @@ def trace_list(request: HttpRequest) -> HttpResponse:
 
     qs = PipelineTrace.objects.select_related("session").all()
     kind = (request.GET.get("kind") or "").strip()
-    if kind in (PipelineTrace.Kind.SEARCH, PipelineTrace.Kind.INDEXING):
+    if kind in (
+        PipelineTrace.Kind.SEARCH,
+        PipelineTrace.Kind.INDEXING,
+        PipelineTrace.Kind.IMPORT,
+    ):
         qs = qs.filter(kind=kind)
     session_raw = (request.GET.get("session_id") or "").strip()
     if session_raw:
@@ -54,26 +57,13 @@ def trace_detail(request: HttpRequest, trace_id: UUID) -> HttpResponse:
         return gate
 
     trace = get_object_or_404(PipelineTrace.objects.select_related("session"), id=trace_id)
-    payload_pretty = json.dumps(trace.payload, ensure_ascii=False, indent=2, default=str)
     stages_raw = list((trace.payload or {}).get("stages") or [])
-    stages = [
-        {
-            "name": s.get("name", "?"),
-            "data_pretty": json.dumps(
-                s.get("data") or {},
-                ensure_ascii=False,
-                indent=2,
-                default=str,
-            ),
-        }
-        for s in stages_raw
-    ]
+    stages = [{"name": s.get("name", "?")} for s in stages_raw]
     return render(
         request,
         "discovery/trace_detail.html",
         {
             "trace": trace,
             "stages": stages,
-            "payload_pretty": payload_pretty,
         },
     )

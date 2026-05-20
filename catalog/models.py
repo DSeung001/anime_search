@@ -45,7 +45,7 @@ class Anime(models.Model):
     """시리즈(슬러그) 단위."""
 
     slug = models.SlugField(max_length=255, unique=True, db_index=True)
-    title = models.CharField(max_length=512, blank=True, default="")
+    title = models.CharField(max_length=512)
     genres = models.ManyToManyField(Genre, blank=True, related_name="animes")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -54,7 +54,17 @@ class Anime(models.Model):
         ordering = ["slug"]
 
     def __str__(self) -> str:
-        return self.slug
+        return self.title
+
+    def clean(self) -> None:
+        super().clean()
+        if not (self.title or "").strip():
+            raise ValidationError({"title": "시리즈 제목은 필수입니다."})
+
+    def save(self, *args, **kwargs) -> None:
+        self.title = (self.title or "").strip()
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @staticmethod
     def validate_slug(value: str) -> bool:
@@ -70,7 +80,7 @@ class Episode(models.Model):
         related_name="episodes",
     )
     number = models.PositiveIntegerField(db_index=True)
-    title = models.CharField(max_length=512, blank=True, default="")
+    title = models.CharField(max_length=512)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -84,4 +94,14 @@ class Episode(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.anime.slug} ep{self.number}"
+        return f"{self.anime.title} {self.number}화"
+
+    def clean(self) -> None:
+        super().clean()
+        if not (self.title or "").strip():
+            raise ValidationError({"title": "화 제목은 필수입니다."})
+
+    def save(self, *args, **kwargs) -> None:
+        self.title = (self.title or "").strip()
+        self.full_clean()
+        super().save(*args, **kwargs)

@@ -26,8 +26,24 @@
   const youtubeInput = document.getElementById("youtube-url-input");
   const importProgressWrap = document.getElementById("import-progress-wrap");
   const importProgressLabel = document.getElementById("import-progress-label");
+  const traceLinks = document.getElementById("upload-trace-links");
+  const traceImportLink = document.getElementById("upload-trace-import");
+  const traceIndexingLink = document.getElementById("upload-trace-indexing");
 
   let pollTimer = null;
+
+  function updateTraceLinks(publicId) {
+    if (!traceLinks || !publicId) return;
+    var base = resultSection.dataset.traceListUrl || "/search/traces/";
+    var q = "job_public_id=" + encodeURIComponent(publicId);
+    if (traceImportLink) {
+      traceImportLink.href = base + "?kind=import&" + q;
+    }
+    if (traceIndexingLink) {
+      traceIndexingLink.href = base + "?kind=indexing&" + q;
+    }
+    traceLinks.hidden = false;
+  }
 
   function setSubmitEnabled(enabled) {
     submitBtn.disabled = !enabled;
@@ -103,6 +119,7 @@
     resultSection.hidden = false;
     resultMsg.textContent = data.message || data.status_display || data.status || "";
     resultId.textContent = data.public_id || "";
+    updateTraceLinks(data.public_id || "");
     if (data.preview_url) {
       preview.hidden = false;
       preview.src = data.preview_url;

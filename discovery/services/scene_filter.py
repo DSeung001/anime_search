@@ -21,7 +21,7 @@ def filter_segments_for_display(
 ) -> tuple[list[SceneSegment], list[dict]]:
     """점수 미달 탈락 후 상위 N개만 반환. (kept, dropped with reason)."""
     min_score = float(getattr(settings, "SEARCH_MIN_SCORE", 0.24))
-    max_scenes = int(getattr(settings, "SEARCH_MAX_SCENES", 5))
+    max_scenes = int(getattr(settings, "SEARCH_MAX_SCENES", 12))
     kept: list[SceneSegment] = []
     dropped: list[dict] = []
     for seg in segments:

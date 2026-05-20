@@ -5,6 +5,7 @@ from uuid import UUID
 
 from celery import shared_task
 
+from anime_indexing.observability.pipeline_tracer import PipelineTracer
 from anime_indexing.paths import staging_frames_leaf, staging_input_dir_for_job_frames
 
 from catalog.services.youtube_import import download_to_input_dir, normalize_youtube_url
@@ -38,8 +39,12 @@ def import_youtube_video_task(public_id: str, youtube_url: str) -> dict[str, str
         )
         return {"public_id": public_id, "status": job.status}
 
+    tracer = PipelineTracer.start_import(job_public_id=uid)
+    tracer.stage("youtube_url", url=youtube_url[:512])
+
     try:
         canonical_url = normalize_youtube_url(youtube_url)
+        tracer.stage("url_normalized", canonical_url=canonical_url)
         ensure_job_staging_dirs(job)
         frames_leaf = staging_frames_leaf(job.staging_rel_path)
         input_dir = staging_input_dir_for_job_frames(frames_leaf)
@@ -62,6 +67,16 @@ def import_youtube_video_task(public_id: str, youtube_url: str) -> dict[str, str
         )
 
         enqueued = try_auto_enqueue_job(uid)
+        tracer.stage(
+            "import_done",
+            filename=dest_name,
+            auto_enqueued=enqueued,
+            status=job.status,
+        )
+        tracer.finish(
+            status="ok",
+            summary=f"file={dest_name} enqueue={enqueued}",
+        )
         logger.info(
             "import_youtube: done public_id=%s file=%s auto_enqueue=%s",
             public_id,
@@ -76,6 +91,8 @@ def import_youtube_video_task(public_id: str, youtube_url: str) -> dict[str, str
         }
     except Exception as exc:  # noqa: BLE001
         logger.exception("import_youtube: failed public_id=%s", public_id)
+        tracer.stage("error", message=str(exc)[:500])
+        tracer.finish(status="error", summary=str(exc)[:512])
         job.refresh_from_db()
         if job.status == EmbeddingJob.Status.IMPORTING:
             _mark_import_failed(job, exc)

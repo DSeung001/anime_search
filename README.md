@@ -55,6 +55,9 @@ python3 manage.py runserver
 - 장면 검색: http://localhost:8000/search/
 - 업로드: http://localhost:8000/upload/
 - 잡 목록: http://localhost:8000/jobs/
+- 파이프라인 trace (검색·색인·YouTube 가져오기, staff / `DEBUG`): http://localhost:8000/search/traces/
+  - 검색만: `?kind=search` · 잡 색인: `?kind=indexing&job_public_id=<UUID>` · YouTube 가져오기: `?kind=import&job_public_id=<UUID>`
+- 검색 결과: 최대 `SEARCH_MAX_SCENES`(기본 12)장면, 유사도 `n%(score: 0.xx)` (0.25=100%), 썸네일 클릭 시 팝업 재생
 
 업로드 → `EmbeddingJob` 생성 → 스테이징 `data/staging/jobs/<uuid>/` → (준비되면) 자동 enqueue → worker가 ffmpeg·CLIP·Qdrant 처리.
 

@@ -44,7 +44,7 @@
   <h2>최근 작업</h2>
   <div class="table-wrap">
     <table id="jobs-table">
-      <thead><tr><th>시리즈</th><th>public_id</th><th>상태</th><th>화</th><th>생성</th><th>오류</th><th>작업</th></tr></thead>
+      <thead><tr><th>시리즈</th><th>public_id</th><th>상태</th><th>화</th><th>생성</th><th>오류</th><th>trace</th><th>작업</th></tr></thead>
       <tbody>
         {% for j in jobs %}
         <tr
@@ -59,6 +59,20 @@
           <td style="font-size:0.82rem;color:var(--muted);">{{ j.created_at|date:"Y-m-d H:i" }}</td>
           <td class="errcell job-error-cell">{% if j.last_error %}<span class="job-error-text" title="{{ j.last_error }}">{{ j.last_error|truncatechars:40 }}</span>{% else %}—{% endif %}</td>
           <td>
+            <a
+              class="btn btn-ghost btn-mini"
+              href="{% url 'discovery_trace_list' %}?kind=indexing&amp;job_public_id={{ j.public_id }}"
+              title="임베딩·Qdrant trace"
+            >색인</a>
+            {% if j.youtube_source_url %}
+            <a
+              class="btn btn-ghost btn-mini"
+              href="{% url 'discovery_trace_list' %}?kind=import&amp;job_public_id={{ j.public_id }}"
+              title="YouTube 가져오기 trace"
+            >가져오기</a>
+            {% endif %}
+          </td>
+          <td>
             <button
               type="button"
               class="btn btn-ghost btn-mini job-delete-btn"
@@ -67,7 +81,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="empty">작업 없음</td></tr>
+        <tr><td colspan="8" class="empty">작업 없음</td></tr>
         {% endfor %}
       </tbody>
     </table>

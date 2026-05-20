@@ -16,7 +16,6 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from anime_indexing.frame_directory_embedding import (
     embedding_result_as_json,
-    get_vision_worker,
     run_frame_directory_embedding,
 )
 from anime_indexing.paths import (
@@ -24,8 +23,6 @@ from anime_indexing.paths import (
     staging_frames_leaf,
     staging_input_dir_for_job_frames,
 )
-from anime_indexing.vectors.qdrant_search import search_segments
-
 from catalog.models import Anime, Genre
 from embeddings.api_reference import path_help_payload
 from catalog.services.episode import get_or_create_episode
@@ -104,7 +101,11 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
     ep_num, err = required_episode_number_from_json(body)
     if err:
         return JsonResponse({"detail": err}, status=400)
-    anime, _ = Anime.objects.get_or_create(slug=slug, defaults={"title": ""})
+    anime_title = (body.get("title") or "").strip() or slug
+    anime, _ = Anime.objects.get_or_create(slug=slug, defaults={"title": anime_title})
+    if anime.title != anime_title:
+        anime.title = anime_title
+        anime.save(update_fields=["title", "updated_at"])
 
     raw_genres = body.get("genre_slugs")
     genre_slugs_body: list[str] = []
@@ -125,7 +126,8 @@ def create_embedding_job(request: HttpRequest) -> JsonResponse:
         ]
         anime.genres.set(genres)
 
-    episode_row = get_or_create_episode(anime=anime, number=ep_num)
+    ep_title = (body.get("episode_title") or "").strip() or f"{ep_num}화"
+    episode_row = get_or_create_episode(anime=anime, number=ep_num, title=ep_title)
     job = EmbeddingJob.objects.create(anime=anime, episode=episode_row)
     staging_leaf = ensure_job_staging_dirs(job)
     schedule_auto_enqueue_on_commit(job.public_id)
@@ -234,55 +236,6 @@ def run_embedding_job_by_id(request: HttpRequest, public_id: UUID) -> JsonRespon
         },
         status=202,
     )
-
-
-@csrf_exempt
-@require_POST
-def search_segments_api(request: HttpRequest) -> JsonResponse:
-    """
-    텍스트 질의 벡터 검색. ``genre_slugs``·``anime_id``·``episode`` 가 있으면 필터 결합.
-    """
-    if not _embed_allowed(request):
-        return JsonResponse({"detail": "forbidden"}, status=403)
-
-    try:
-        body = _json_body(request)
-    except json.JSONDecodeError:
-        return JsonResponse({"detail": "invalid json"}, status=400)
-
-    q = (body.get("q") or "").strip()
-    if not q:
-        return JsonResponse({"detail": "q is required"}, status=400)
-
-    limit = int(body.get("limit", 20))
-    anime_slug = (body.get("anime_id") or "").strip() or None
-    ep_raw = body.get("episode")
-    episode: int | None = None
-    if ep_raw is not None and ep_raw != "":
-        try:
-            episode = int(ep_raw)
-        except (TypeError, ValueError):
-            return JsonResponse({"detail": "episode must be int"}, status=400)
-
-    gs = body.get("genre_slugs")
-    genre_slugs: list[str] | None = None
-    if gs is not None:
-        if not isinstance(gs, list):
-            return JsonResponse({"detail": "genre_slugs must be a JSON array of strings"}, status=400)
-        genre_slugs = [str(x).strip() for x in gs if str(x).strip()]
-        if not genre_slugs:
-            genre_slugs = None
-
-    worker = get_vision_worker()
-    vec = worker.encode_text_query(q)
-    hits = search_segments(
-        query_vector=vec.tolist(),
-        limit=limit,
-        anime_slug=anime_slug,
-        episode=episode,
-        genre_slugs=genre_slugs,
-    )
-    return JsonResponse({"hits": hits, "count": len(hits)})
 
 
 @csrf_exempt

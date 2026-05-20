@@ -1,0 +1,28 @@
+.trace-json-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.trace-json-mount {
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.75rem;
+  overflow: auto;
+  max-height: 28rem;
+  font-size: 0.85rem;
+}
+
+.trace-json-mount--payload {
+  max-height: 40rem;
+}
+
+.trace-stage summary {
+  cursor: pointer;
+}
+
+.json-formatter-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
