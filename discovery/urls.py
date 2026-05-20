@@ -6,7 +6,19 @@ from discovery import views
 from discovery import views_trace
 
 urlpatterns = [
+    path("", views.chat_home, name="discovery_home"),
     path("search/", views.search_page, name="discovery_search"),
+    path(
+        "search/<uuid:session_id>/",
+        views.chat_session_page,
+        name="discovery_chat_session",
+    ),
+    path("api/search/sessions/", views.sessions_api, name="discovery_sessions_api"),
+    path(
+        "api/search/sessions/<uuid:session_id>/messages/",
+        views.session_messages_api,
+        name="discovery_session_messages_api",
+    ),
     path("search/traces/", views_trace.trace_list, name="discovery_trace_list"),
     path(
         "search/traces/<uuid:trace_id>/",

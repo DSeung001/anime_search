@@ -4,6 +4,15 @@
 {% block title %}애니 장면 찾기{% endblock %}
 
 {% block main %}
+<div
+  id="discovery-chat-root"
+  data-session-id="{{ session_id|default:'' }}"
+  data-messages-url="{% if session_id %}{% url 'discovery_session_messages_api' session_id=session_id %}{% endif %}"
+  data-chat-api-url="{% url 'discovery_chat_api' %}"
+>
+<p class="chat-page-nav">
+  <a href="{{ chat_back_url|default:'/' }}" class="embed-back">← 채팅 목록</a>
+</p>
 <h1 class="page-title discovery-page-title">애니 장면 찾기</h1>
 <p class="lead">원하는 장면을 말로 설명하면 AI가 검색해 드립니다.</p>
 
@@ -19,12 +28,13 @@
     <div id="chat-thread" class="discovery-thread" aria-live="polite"></div>
     <div class="chat-composer">
       <p id="chat-error" class="chat-error-banner" hidden></p>
-      <textarea id="chat-input" placeholder="예: 비 오는 창가에 서 있는 검은 머리 주인공" rows="3"></textarea>
+      <textarea id="chat-input" placeholder="ex: A가 B와 학교 앞에서 화해는 장면까지 봤어" rows="3"></textarea>
       <div class="chat-composer-actions">
         <button type="button" class="btn btn-discovery-send" id="chat-send">보내기</button>
       </div>
     </div>
   </section>
+</div>
 </div>
 
 <div id="scene-video-modal" class="scene-modal" hidden aria-hidden="true">

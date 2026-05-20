@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
+
 from anime_indexing.video.ffmpeg_resolve import resolve_ffprobe_exe
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,10 @@ def ffprobe_pkt_pts_times(video_path: Path, *, ffprobe_bin: str | None = None) -
     return out
 
 
+def _extract_fps_from_settings() -> float:
+    return float(getattr(settings, "VIDEO_EXTRACT_FPS", 1.0))
+
+
 def write_frames_pts_manifest(
     *,
     video_path: Path,
@@ -79,18 +85,32 @@ def write_frames_pts_manifest(
 ) -> Path | None:
     """
     추출된 JPG 순서에 맞춰 ``frames_pts_manifest.jsonl`` 작성.
-    ffprobe 프레임 수와 JPG 수 중 작은 쪽만 사용. ffprobe 없으면 None(파일 미작성).
+
+    - ``VIDEO_EXTRACT_FPS`` > 0: 합성 PTS ``index / fps`` (ffprobe 불필요)
+    - ``VIDEO_EXTRACT_FPS`` <= 0: ffprobe ``pkt_pts_time`` 과 JPG 1:1 매칭
     """
     jpgs = sorted_frame_jpgs(frames_leaf)
+    if not jpgs:
+        return None
+
+    manifest = frames_leaf / MANIFEST_FILENAME
+    fps = _extract_fps_from_settings()
+
+    if fps > 0:
+        with manifest.open("w", encoding="utf-8") as f:
+            for i, p in enumerate(jpgs):
+                rec: dict[str, Any] = {"file": p.name, "pts_sec": float(i) / fps}
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return manifest
+
     pts = ffprobe_pkt_pts_times(video_path, ffprobe_bin=ffprobe_bin)
     if not pts:
         return None
 
     n = min(len(jpgs), len(pts))
-    manifest = frames_leaf / MANIFEST_FILENAME
     with manifest.open("w", encoding="utf-8") as f:
         for i in range(n):
-            rec: dict[str, Any] = {"file": jpgs[i].name, "pts_sec": pts[i]}
+            rec = {"file": jpgs[i].name, "pts_sec": pts[i]}
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     if n < len(jpgs):
         logger.warning(

@@ -43,6 +43,15 @@ sequenceDiagram
 
 업로드 → `EmbeddingJob` → Celery `run_embedding_job_task` → ffmpeg 프레임 → CLIP `encode_image` → Qdrant upsert (`timestamp_sec` in payload).
 
+**프레임 시각(`timestamp_sec`)** — [`anime_indexing/video/frame_timestamps.py`](../anime_indexing/video/frame_timestamps.py), `.env`의 `VIDEO_EXTRACT_FPS`:
+
+| `VIDEO_EXTRACT_FPS` | 계산 |
+|---------------------|------|
+| > 0 (기본 1) | `frame_index / VIDEO_EXTRACT_FPS` (초) |
+| ≤ 0 (전 프레임) | `frames_pts_manifest.jsonl`의 ffprobe `pts_sec` **필수** — 없으면 잡 실패 + FFPROBE/FPS 설정 안내 |
+
+기존에 색인된 벡터는 `index/24` 폴백일 수 있음 → **DONE 잡 재색인** 권장. trace stage `frame_times`에서 `source`, `sample_ts` 확인.
+
 ### 1.3 역할 분리 (핵심)
 
 | 레이어 | 기술 | 입력 | 출력 |
@@ -105,7 +114,7 @@ discovery/
 - `catalog/views.py` — 업로드 시 `job.source_video_filename = dest_name`
 - `embeddings/services/job_delete.py` — DONE 삭제 가드
 - `requirements.txt` — `google-genai`, `redis` (이미 있음)
-- `catalog/templates/catalog/base.html` — `/search/` 링크 (선택)
+- `catalog/templates/catalog/base.html` — 글로벌 내비: 장면 채팅은 **「채팅」** 으로만 진입 (`/` 목록 → `/search/` 등)
 
 ---
 
@@ -205,10 +214,12 @@ def run_scene_search(
 
 흐름 (최대 3 라운드):
 
-1. Gemini에 `ChatMessage` 히스토리 + user 입력
-2. `function_call` → `run_scene_search` → `present_scenes`
+1. DB의 **USER/ASSISTANT만** 최근 `CHAT_MAX_HISTORY`건으로 프롬프트 조립(현재 메시지는 1회만; TOOL은 슬롯·문자열 모두 제외)
+2. Gemini 호출 → `function_call` → `run_scene_search` → `present_scenes` (동일 턴 다중 `search_scenes`는 `_merge_scene_lists`로 UI `scenes` 병합)
 3. tool result를 Gemini에 전달 → 최종 assistant 텍스트
-4. DB에 user / tool / assistant 메시지 저장, `tool_payload`에 `scenes`, `search_query_ko`, `search_query_en` 보관
+4. 성공 시 `transaction.atomic`으로 user / tool / assistant 일괄 저장 (`tool_payload`에 `scenes`, `search_query_ko`, `search_query_en` 보관). Gemini·검색 실패 시 메시지 미저장
+
+**세션**: `session_id`가 UUID 형식이지만 DB에 없으면 HTTP **404** (`session not found`). 클라이언트는 `sessionStorage` 초기화 후 재전송 시 새 세션.
 
 **시스템 프롬프트 요지**
 
@@ -242,14 +253,18 @@ if job.status == EmbeddingJob.Status.DONE and settings.DISCOVERY_PROTECT_DONE_JO
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/search/` | 채팅 UI (공개) |
+| GET | `/` | **채팅 목록** (최근 `ChatSession`, 서버 DB) |
+| GET | `/search/` | 새 장면 검색 채팅 |
+| GET | `/search/<session_uuid>/` | 기존 세션 이어하기 (메시지·마지막 scenes 복원) |
+| GET | `/api/search/sessions/` | 세션 목록 JSON |
+| GET | `/api/search/sessions/<uuid>/messages/` | 세션 메시지 + `last_scenes` JSON |
 | GET | `/search/traces/` | 파이프라인 trace 목록 (staff / `DEBUG`) |
 | GET | `/search/traces/<uuid>/` | trace 단계별 상세 (staff / `DEBUG`) |
 | POST | `/api/search/chat/` | `{ "message": "...", "session_id": "uuid?" }` → `{ session_id, reply, scenes }` |
 | GET | `/api/search/thumb/...` | 썸네일 |
 | GET | `/api/search/video/...` | 영상 스트리밍 |
 
-장면 검색은 Discovery 채팅 API(`/search/api/chat/`)만 사용. (구 `POST /api/embed/search/` 제거)
+장면 검색은 Discovery 채팅 API **`POST /api/search/chat/`** 만 사용. (구 `POST /api/embed/search/` 제거)
 
 ### POST `/api/search/chat/` 응답 예
 

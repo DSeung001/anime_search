@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-
+  const rootEl = document.getElementById("discovery-chat-root");
   const threadEl = document.getElementById("chat-thread");
   const inputEl = document.getElementById("chat-input");
   const sendBtn = document.getElementById("chat-send");
@@ -10,7 +10,16 @@
   const modalEl = document.getElementById("scene-video-modal");
   const modalVideo = document.getElementById("scene-modal-video");
   const modalCaption = document.getElementById("scene-modal-caption");
-  let sessionId = sessionStorage.getItem("discovery_session_id") || "";
+
+  const initialSessionId = (rootEl && rootEl.dataset.sessionId) || "";
+  const messagesUrl = (rootEl && rootEl.dataset.messagesUrl) || "";
+  const chatApiUrl = (rootEl && rootEl.dataset.chatApiUrl) || "/api/search/chat/";
+  const ROLE_LABELS = {
+    user: "사용자",
+    assistant: "어시스턴트",
+    tool: "장면 검색",
+  };
+  let sessionId = initialSessionId || sessionStorage.getItem("discovery_session_id") || "";
   let typingEl = null;
 
   function getCookie(name) {
@@ -18,15 +27,38 @@
     return m ? decodeURIComponent(m[2]) : "";
   }
 
+  function toolLineFromApiRow(m) {
+    if (m.search_query_ko) {
+      return (
+        "장면 검색: " +
+        m.search_query_ko +
+        (m.scene_count ? " (" + m.scene_count + "건)" : "")
+      );
+    }
+    return m.content || "장면 검색";
+  }
+
   function appendMsg(role, text) {
+    const body = (text || "").trim();
+    if (!body) return;
+
     const row = document.createElement("div");
     row.className = "chat-row chat-row--" + role;
 
+    const stack = document.createElement("div");
+    stack.className = "chat-row-stack";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "chat-role-label";
+    labelEl.textContent = ROLE_LABELS[role] || role;
+
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble chat-bubble--" + role;
-    bubble.textContent = text;
+    bubble.textContent = body;
 
-    row.appendChild(bubble);
+    stack.appendChild(labelEl);
+    stack.appendChild(bubble);
+    row.appendChild(stack);
     threadEl.appendChild(row);
     threadEl.scrollTop = threadEl.scrollHeight;
   }
@@ -161,6 +193,41 @@
     });
   }
 
+  function syncSessionToUrl(id) {
+    if (!id) return;
+    sessionStorage.setItem("discovery_session_id", id);
+    if (initialSessionId) return;
+    const target = "/search/" + id + "/";
+    if (window.location.pathname !== target) {
+      window.history.replaceState(null, "", target);
+    }
+  }
+
+  async function loadHistory() {
+    if (!messagesUrl || !sessionId) return;
+    try {
+      const res = await fetch(messagesUrl);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || res.statusText);
+      }
+      threadEl.innerHTML = "";
+      (data.messages || []).forEach(function (m) {
+        if (m.role === "user") {
+          appendMsg("user", m.content || "");
+        } else if (m.role === "assistant") {
+          appendMsg("assistant", m.content || "");
+        } else if (m.role === "tool") {
+          appendMsg("tool", toolLineFromApiRow(m));
+        }
+      });
+      renderScenes(data.last_scenes || []);
+    } catch (e) {
+      errEl.textContent = e.message || String(e);
+      errEl.hidden = false;
+    }
+  }
+
   async function send() {
     const message = (inputEl.value || "").trim();
     if (!message) return;
@@ -172,7 +239,7 @@
     showTyping();
 
     try {
-      const res = await fetch("/api/search/chat/", {
+      const res = await fetch(chatApiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -185,10 +252,14 @@
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 404) {
+          sessionId = "";
+          sessionStorage.removeItem("discovery_session_id");
+        }
         throw new Error(data.detail || res.statusText);
       }
       sessionId = data.session_id;
-      sessionStorage.setItem("discovery_session_id", sessionId);
+      syncSessionToUrl(sessionId);
       hideTyping();
       appendMsg("assistant", data.reply || "");
       renderScenes(data.scenes || []);
@@ -210,4 +281,9 @@
       send();
     }
   });
+
+  if (sessionId) {
+    sessionStorage.setItem("discovery_session_id", sessionId);
+  }
+  loadHistory();
 })();

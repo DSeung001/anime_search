@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from anime_indexing.paths import ensure_dir, staging_frames_leaf
 from anime_indexing.video.extract import extract_frames_ffmpeg
+from anime_indexing.video.pts_manifest import write_frames_pts_manifest
 
 from embeddings.models import EmbeddingJob
 
@@ -65,4 +66,10 @@ class Command(BaseCommand):
             max_frames=None if dj_settings.VIDEO_EXTRACT_MAX_FRAMES <= 0 else dj_settings.VIDEO_EXTRACT_MAX_FRAMES,
             jpeg_quality=dj_settings.VIDEO_EXTRACT_JPEG_Q,
         )
-        self.stdout.write(self.style.SUCCESS(f"추출 완료: {n} frames -> {out_dir}"))
+        manifest = write_frames_pts_manifest(
+            video_path=video_path,
+            frames_leaf=out_dir,
+            ffprobe_bin=dj_settings.FFPROBE_BIN or None,
+        )
+        extra = f", manifest={manifest.name}" if manifest else ", manifest=(skipped)"
+        self.stdout.write(self.style.SUCCESS(f"추출 완료: {n} frames -> {out_dir}{extra}"))

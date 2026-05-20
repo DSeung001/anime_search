@@ -3,8 +3,6 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # 메인 페이지, 잡 목록 보기 페이지랑 뷰 겸용
-    path("", views.job_console, name="catalog_home"),
     # 장르 리스트랑 수정, 등록 기능
     path("genres/", views.genre_list, name="catalog_genre_list"),
     path("genres/new/", views.genre_new, name="catalog_genre_new"),

@@ -14,7 +14,18 @@ from django.views.decorators.http import require_GET, require_POST
 from anime_indexing.paths import anime_staging_root, staging_frames_leaf, staging_input_dir_for_job_frames
 from anime_indexing.video.extract import VIDEO_EXTENSIONS
 from catalog.views import _safe_video_name, _VIDEO_MIME
-from discovery.services.chat_orchestrator import ChatOrchestratorError, get_or_create_session, run_chat_turn
+from discovery.models import ChatSession
+from discovery.services.chat_orchestrator import (
+    ChatOrchestratorError,
+    ChatSessionNotFoundError,
+    get_or_create_session,
+    run_chat_turn,
+)
+from discovery.services.chat_history import (
+    get_session_messages,
+    list_recent_sessions,
+    sessions_for_template,
+)
 from discovery.services.rate_limit import RateLimitExceeded, check_rate_limit
 from embeddings.models import EmbeddingJob
 
@@ -23,9 +34,56 @@ def _json_body(request: HttpRequest) -> dict[str, Any]:
     return json.loads(request.body.decode("utf-8") or "{}")
 
 
+def _parse_limit(request: HttpRequest, default: int = 50) -> int:
+    try:
+        return int(request.GET.get("limit", default))
+    except (TypeError, ValueError):
+        return default
+
+
+@require_GET
+def chat_home(request: HttpRequest) -> HttpResponse:
+    return render(
+        request,
+        "discovery/chat_list.html",
+        {"sessions": sessions_for_template(limit=_parse_limit(request))},
+    )
+
+
 @require_GET
 def search_page(request: HttpRequest) -> HttpResponse:
-    return render(request, "discovery/search_chat.html", {})
+    return render(
+        request,
+        "discovery/search_chat.html",
+        {"session_id": "", "chat_back_url": "/"},
+    )
+
+
+@require_GET
+def chat_session_page(request: HttpRequest, session_id: UUID) -> HttpResponse:
+    get_object_or_404(ChatSession, id=session_id)
+    return render(
+        request,
+        "discovery/search_chat.html",
+        {
+            "session_id": str(session_id),
+            "chat_back_url": "/",
+        },
+    )
+
+
+@require_GET
+def sessions_api(request: HttpRequest) -> JsonResponse:
+    return JsonResponse({"sessions": list_recent_sessions(limit=_parse_limit(request))})
+
+
+@require_GET
+def session_messages_api(request: HttpRequest, session_id: UUID) -> JsonResponse:
+    try:
+        payload = get_session_messages(session_id)
+    except ChatSessionNotFoundError:
+        return JsonResponse({"detail": "session not found"}, status=404)
+    return JsonResponse(payload)
 
 
 @csrf_exempt
@@ -53,7 +111,10 @@ def chat_api(request: HttpRequest) -> JsonResponse:
         except ValueError:
             return JsonResponse({"detail": "invalid session_id"}, status=400)
 
-    session = get_or_create_session(session_uuid)
+    try:
+        session = get_or_create_session(session_uuid)
+    except ChatSessionNotFoundError:
+        return JsonResponse({"detail": "session not found"}, status=404)
 
     try:
         reply, scenes = run_chat_turn(session=session, user_message=message, request=request)

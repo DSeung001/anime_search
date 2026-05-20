@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 from django.conf import settings
+from django.db import transaction
 from django.http import HttpRequest
 from google.genai import types
 
@@ -52,9 +54,22 @@ _GENERATE_CONFIG = types.GenerateContentConfig(
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
 )
 
+_DIALOGUE_ROLES = (ChatMessage.Role.USER, ChatMessage.Role.ASSISTANT)
+
 
 class ChatOrchestratorError(Exception):
     pass
+
+
+class ChatSessionNotFoundError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class _PendingToolMessage:
+    content: str
+    tool_name: str
+    tool_payload: dict[str, Any]
 
 
 def _function_call_args(fc: types.FunctionCall) -> dict[str, Any]:
@@ -70,6 +85,53 @@ def _search_trace_status(scenes: list[dict[str, Any]]) -> str:
     if scenes:
         return "ok"
     return "empty"
+
+
+def _scene_dedupe_key(scene: dict[str, Any]) -> tuple[str, float]:
+    job_id = str(scene.get("job_public_id") or "")
+    peak = round(float(scene.get("peak_sec") or 0.0), 1)
+    return job_id, peak
+
+
+def _merge_scene_lists(
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_key: dict[tuple[str, float], dict[str, Any]] = {}
+    for scene in existing + new:
+        key = _scene_dedupe_key(scene)
+        prev = by_key.get(key)
+        if prev is None or float(scene.get("score") or 0.0) > float(prev.get("score") or 0.0):
+            by_key[key] = scene
+    merged = sorted(by_key.values(), key=lambda s: float(s.get("score") or 0.0), reverse=True)
+    cap = int(getattr(settings, "SEARCH_MAX_SCENES", 12))
+    return merged[: max(0, cap)]
+
+
+def _format_chat_prompt(history_lines: list[str], user_message: str) -> str:
+    ctx = "\n".join(history_lines)
+    if not ctx:
+        return user_message
+    return f"이전 대화:\n{ctx}\n\n현재 사용자 메시지: {user_message}"
+
+
+def _history_lines_for_session(session: ChatSession) -> list[str]:
+    max_h = int(getattr(settings, "CHAT_MAX_HISTORY", 20))
+    msgs = list(
+        session.messages.filter(role__in=_DIALOGUE_ROLES).order_by("-created_at")[:max_h]
+    )
+    msgs.reverse()
+    lines: list[str] = []
+    for m in msgs:
+        if m.role == ChatMessage.Role.USER:
+            lines.append(f"사용자: {m.content}")
+        elif m.role == ChatMessage.Role.ASSISTANT:
+            lines.append(f"어시스턴트: {m.content}")
+    return lines
+
+
+def _build_user_prompt(session: ChatSession, user_message: str) -> str:
+    return _format_chat_prompt(_history_lines_for_session(session), user_message)
 
 
 def _execute_search_scenes(
@@ -136,22 +198,6 @@ def _execute_search_scenes(
     return json.dumps(payload, ensure_ascii=False), scenes, search_query, clip_query, trace_id
 
 
-def _build_user_prompt(session: ChatSession, user_message: str) -> str:
-    max_h = int(getattr(settings, "CHAT_MAX_HISTORY", 20))
-    msgs = list(session.messages.order_by("-created_at")[:max_h])
-    msgs.reverse()
-    lines: list[str] = []
-    for m in msgs:
-        if m.role == ChatMessage.Role.USER:
-            lines.append(f"사용자: {m.content}")
-        elif m.role == ChatMessage.Role.ASSISTANT:
-            lines.append(f"어시스턴트: {m.content}")
-    ctx = "\n".join(lines)
-    if not ctx:
-        return user_message
-    return f"이전 대화:\n{ctx}\n\n현재 사용자 메시지: {user_message}"
-
-
 def run_chat_turn(
     *,
     session: ChatSession,
@@ -164,8 +210,6 @@ def run_chat_turn(
         raise ChatOrchestratorError(str(exc)) from exc
     model = get_gemini_model_id()
 
-    ChatMessage.objects.create(session=session, role=ChatMessage.Role.USER, content=user_message)
-
     prompt = _build_user_prompt(session, user_message)
     user_content = types.Content(
         role="user",
@@ -174,10 +218,10 @@ def run_chat_turn(
 
     scenes: list[dict[str, Any]] = []
     searched = False
-    contents: list[types.Content] = [user_content]
+    pending_tools: list[_PendingToolMessage] = []
     response = client.models.generate_content(
         model=model,
-        contents=contents,
+        contents=[user_content],
         config=_GENERATE_CONFIG,
     )
 
@@ -192,46 +236,54 @@ def run_chat_turn(
 
         tool_response_parts: list[types.Part] = []
         for fc in fn_calls:
-            if fc.name != "search_scenes":
-                continue
-            searched = True
-            args = _function_call_args(fc)
-            tool_json, scenes, query_ko, query_en, trace_id = _execute_search_scenes(
-                args, request, session=session
-            )
-            tool_payload: dict[str, Any] = {
-                "scenes": scenes,
-                "args": args,
-                "search_query_ko": query_ko,
-                "search_query_en": query_en,
-            }
-            if trace_id:
-                tool_payload["trace_id"] = str(trace_id)
-            ChatMessage.objects.create(
-                session=session,
-                role=ChatMessage.Role.TOOL,
-                content=tool_json[:8000],
-                tool_name="search_scenes",
-                tool_payload=tool_payload,
-            )
-            tool_response_parts.append(
-                types.Part.from_function_response(
-                    name=fc.name,
-                    response={"result": tool_json},
+            name = fc.name or ""
+            if name == "search_scenes":
+                searched = True
+                args = _function_call_args(fc)
+                tool_json, new_scenes, query_ko, query_en, trace_id = _execute_search_scenes(
+                    args, request, session=session
                 )
-            )
+                scenes = _merge_scene_lists(scenes, new_scenes)
+                tool_payload: dict[str, Any] = {
+                    "scenes": new_scenes,
+                    "args": args,
+                    "search_query_ko": query_ko,
+                    "search_query_en": query_en,
+                }
+                if trace_id:
+                    tool_payload["trace_id"] = str(trace_id)
+                pending_tools.append(
+                    _PendingToolMessage(
+                        content=tool_json[:8000],
+                        tool_name="search_scenes",
+                        tool_payload=tool_payload,
+                    )
+                )
+                tool_response_parts.append(
+                    types.Part.from_function_response(
+                        name=name,
+                        response={"result": tool_json},
+                    )
+                )
+            else:
+                err_json = json.dumps({"error": "unsupported tool"}, ensure_ascii=False)
+                tool_response_parts.append(
+                    types.Part.from_function_response(
+                        name=name,
+                        response={"result": err_json},
+                    )
+                )
 
         if not tool_response_parts:
             break
 
-        contents = [
-            user_content,
-            function_call_content,
-            types.Content(role="tool", parts=tool_response_parts),
-        ]
         response = client.models.generate_content(
             model=model,
-            contents=contents,
+            contents=[
+                user_content,
+                function_call_content,
+                types.Content(role="tool", parts=tool_response_parts),
+            ],
             config=_GENERATE_CONFIG,
         )
 
@@ -248,19 +300,35 @@ def run_chat_turn(
             else "조건에 맞는 장면을 찾지 못했습니다. 설명을 조금 바꿔 보시겠어요?"
         )
 
-    ChatMessage.objects.create(
-        session=session,
-        role=ChatMessage.Role.ASSISTANT,
-        content=reply_text,
-        tool_payload={"scenes": scenes} if scenes else None,
-    )
-    session.save(update_fields=["updated_at"])
+    with transaction.atomic():
+        ChatMessage.objects.create(
+            session=session,
+            role=ChatMessage.Role.USER,
+            content=user_message,
+        )
+        for pending in pending_tools:
+            ChatMessage.objects.create(
+                session=session,
+                role=ChatMessage.Role.TOOL,
+                content=pending.content,
+                tool_name=pending.tool_name,
+                tool_payload=pending.tool_payload,
+            )
+        ChatMessage.objects.create(
+            session=session,
+            role=ChatMessage.Role.ASSISTANT,
+            content=reply_text,
+            tool_payload={"scenes": scenes} if scenes else None,
+        )
+        session.save(update_fields=["updated_at"])
+
     return reply_text, scenes
 
 
 def get_or_create_session(session_id: UUID | None) -> ChatSession:
-    if session_id:
-        found = ChatSession.objects.filter(id=session_id).first()
-        if found:
-            return found
-    return ChatSession.objects.create()
+    if session_id is None:
+        return ChatSession.objects.create()
+    found = ChatSession.objects.filter(id=session_id).first()
+    if found is None:
+        raise ChatSessionNotFoundError(f"session not found: {session_id}")
+    return found

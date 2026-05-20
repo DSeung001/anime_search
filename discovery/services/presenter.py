@@ -25,7 +25,10 @@ def _resolve_video_filename(job: EmbeddingJob) -> str | None:
 
 
 def _fmt_time(sec: float) -> str:
-    s = int(max(0, sec))
+    raw = max(0.0, float(sec))
+    if raw < 60.0:
+        return f"{raw:.1f}s"
+    s = int(raw)
     return f"{s // 60}:{s % 60:02d}"
 
 

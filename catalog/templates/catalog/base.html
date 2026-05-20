@@ -12,7 +12,7 @@
   <div class="top-inner">
     <div class="top-start"><span class="brand">애니 벡터 검색</span></div>
     <nav class="nav" aria-label="주요 메뉴">
-      <a href="{% url 'discovery_search' %}"{% if request.resolver_match.url_name == 'discovery_search' %} class="is-active"{% endif %}>검색</a>
+      <a href="{% url 'discovery_home' %}"{% if request.resolver_match.url_name == 'discovery_home' or request.resolver_match.url_name == 'discovery_search' or request.resolver_match.url_name == 'discovery_chat_session' %} class="is-active"{% endif %}>채팅</a>
       <a href="{% url 'catalog_genre_list' %}">장르</a>
       <a href="{% url 'catalog_anime_upload' %}">업로드</a>
       <a href="{% url 'catalog_jobs' %}">잡</a>

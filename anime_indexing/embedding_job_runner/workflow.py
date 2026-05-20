@@ -14,7 +14,13 @@ from anime_indexing.vectors.qdrant_upsert import (
     qdrant_is_configured,
     upsert_job_frame_vectors,
 )
-from anime_indexing.video.pts_manifest import load_pts_by_file, sorted_frame_jpgs
+from anime_indexing.video.frame_timestamps import (
+    compute_frame_timestamps_sec,
+    ensure_pts_manifest_if_needed,
+    get_extract_fps,
+    manifest_present,
+)
+from anime_indexing.video.pts_manifest import sorted_frame_jpgs, write_frames_pts_manifest
 
 from embeddings.models import EmbeddingJob
 
@@ -31,18 +37,25 @@ def maybe_extract_video_for_job(job: EmbeddingJob) -> None:
     from anime_indexing.video.pts_manifest import write_frames_pts_manifest
 
     frames_leaf = staging_frames_leaf(job.staging_rel_path)
-    if any(frames_leaf.glob("*.jpg")):
-        return
-
     input_dir = staging_input_dir_for_job_frames(frames_leaf)
     video = find_first_video(input_dir)
+    ffprobe_bin = settings.FFPROBE_BIN or None
+
+    if any(frames_leaf.glob("*.jpg")):
+        ensure_pts_manifest_if_needed(
+            frames_leaf=frames_leaf,
+            video_path=video,
+            ffprobe_bin=ffprobe_bin,
+        )
+        return
+
     if video is None:
         return
 
     ensure_dir(frames_leaf)
     mf = int(getattr(settings, "VIDEO_EXTRACT_MAX_FRAMES", 0))
     max_frames = None if mf <= 0 else mf
-    fps_setting = float(getattr(settings, "VIDEO_EXTRACT_FPS", 1.0))
+    fps_setting = get_extract_fps()
     fps_arg = None if fps_setting <= 0 else fps_setting
     extract_frames_ffmpeg(
         video_path=video,
@@ -53,7 +66,6 @@ def maybe_extract_video_for_job(job: EmbeddingJob) -> None:
         jpeg_quality=int(getattr(settings, "VIDEO_EXTRACT_JPEG_Q", 2)),
     )
     if any(frames_leaf.glob("*.jpg")):
-        ffprobe_bin = settings.FFPROBE_BIN or None
         write_frames_pts_manifest(
             video_path=video,
             frames_leaf=frames_leaf,
@@ -96,14 +108,24 @@ def run_single_embedding_job(job: EmbeddingJob) -> None:
             staging_rel_path=job.staging_rel_path,
         )
 
-        pts_map = load_pts_by_file(frames_leaf)
-        default_fps = 24.0
-        times: list[float] = []
-        for i, p in enumerate(jpgs):
-            if p.name in pts_map:
-                times.append(pts_map[p.name])
-            else:
-                times.append(float(i) / default_fps)
+        from anime_indexing.paths import staging_input_dir_for_job_frames
+        from anime_indexing.video.extract import find_first_video
+
+        input_dir = staging_input_dir_for_job_frames(frames_leaf)
+        video = find_first_video(input_dir)
+        ensure_pts_manifest_if_needed(
+            frames_leaf=frames_leaf,
+            video_path=video,
+            ffprobe_bin=settings.FFPROBE_BIN or None,
+        )
+        times, ts_source = compute_frame_timestamps_sec(jpgs, frames_leaf)
+        tracer.stage(
+            "frame_times",
+            source=ts_source,
+            extract_fps=get_extract_fps(),
+            manifest_present=manifest_present(frames_leaf),
+            sample_ts=times[:3],
+        )
 
         delete_points_for_anime_episode(
             anime_slug=job.anime.slug,

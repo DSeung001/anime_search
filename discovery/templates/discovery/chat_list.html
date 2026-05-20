@@ -1,0 +1,32 @@
+{% extends "catalog/base.html" %}
+{% load static %}
+
+{% block title %}채팅{% endblock %}
+
+{% block main %}
+<h1 class="page-title discovery-page-title">채팅</h1>
+<p class="lead">이전 대화를 이어가거나 새 장면 검색을 시작하세요.</p>
+
+<div class="chat-list-toolbar">
+  <a href="{% url 'discovery_search' %}" class="btn btn-primary">새 채팅</a>
+</div>
+
+<section class="card chat-session-list-card">
+  <h2>최근 대화</h2>
+  <ul class="chat-session-list" id="chat-session-list">
+    {% for s in sessions %}
+    <li>
+      <a href="{% url 'discovery_chat_session' session_id=s.id %}" class="chat-session-item">
+        <span class="chat-session-preview">{{ s.preview }}</span>
+        <span class="chat-session-meta">
+          <span>{{ s.updated_label }}</span>
+          <span class="chat-session-count">메시지 {{ s.message_count }}개</span>
+        </span>
+      </a>
+    </li>
+    {% empty %}
+    <li class="chat-session-empty">아직 대화가 없습니다. 「새 채팅」으로 검색을 시작해 보세요.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
