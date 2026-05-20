@@ -56,12 +56,16 @@ QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "anime_clip").strip()
 # --- 동영상 → 프레임 (기본: imageio-ffmpeg 동봉 ffmpeg; 덮어쓰려면 FFMPEG_BIN 절대경로)
 FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "").strip()
 FFPROBE_BIN = os.environ.get("FFPROBE_BIN", "").strip()
-# 비움 또는 0 이하: 전 프레임. 양수: 초당 해당 장(ffmpeg fps 필터).
+# 비움: 초당 1장(기본). 0 이하: 전 프레임. 양수: 초당 해당 장(ffmpeg fps 필터).
 _ve_fps_raw = os.environ.get("VIDEO_EXTRACT_FPS", "").strip()
-VIDEO_EXTRACT_FPS = float(_ve_fps_raw) if _ve_fps_raw else 0.0
+VIDEO_EXTRACT_FPS = float(_ve_fps_raw) if _ve_fps_raw else 1.0
 # 0 이하 = 장 수 제한 없음(전 프레임 추출 시 디스크·임베딩 비용 주의).
 VIDEO_EXTRACT_MAX_FRAMES = int(os.environ.get("VIDEO_EXTRACT_MAX_FRAMES", "0"))
 VIDEO_EXTRACT_JPEG_Q = int(os.environ.get("VIDEO_EXTRACT_JPEG_Q", "2"))
+
+# YouTube → 스테이징 (0 이하 = 길이 제한 없음)
+_yt_max_raw = os.environ.get("YOUTUBE_MAX_DURATION_SEC", "7200").strip()
+YOUTUBE_MAX_DURATION_SEC = int(_yt_max_raw) if _yt_max_raw else 0
 
 
 # Quick-start development settings - unsuitable for production
@@ -193,9 +197,51 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 SEARCH_CELERY_TIMEOUT_SEC = int(os.environ.get("SEARCH_CELERY_TIMEOUT_SEC", "120"))
 SEARCH_RATE_LIMIT_PER_MIN = int(os.environ.get("SEARCH_RATE_LIMIT_PER_MIN", "20"))
 CHAT_MAX_HISTORY = int(os.environ.get("CHAT_MAX_HISTORY", "20"))
+SEARCH_QUERY_TRANSLATE_ENABLED = os.environ.get("SEARCH_QUERY_TRANSLATE_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 DISCOVERY_PROTECT_DONE_JOBS = os.environ.get("DISCOVERY_PROTECT_DONE_JOBS", "true").strip().lower() in (
     "1",
     "true",
     "yes",
 )
 SEGMENT_MERGE_GAP_SEC = float(os.environ.get("SEGMENT_MERGE_GAP_SEC", "1.5"))
+SEARCH_MIN_SCORE = float(os.environ.get("SEARCH_MIN_SCORE", "0.24"))
+SEARCH_MAX_SCENES = int(os.environ.get("SEARCH_MAX_SCENES", "5"))
+SEARCH_MERGE_MAX_SEGMENTS = int(os.environ.get("SEARCH_MERGE_MAX_SEGMENTS", "12"))
+PIPELINE_TRACE_ENABLED = os.environ.get("PIPELINE_TRACE_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+PIPELINE_TRACE_LOG_TOP_HITS = int(os.environ.get("PIPELINE_TRACE_LOG_TOP_HITS", "10"))
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "anime_search.pipeline": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

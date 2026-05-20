@@ -23,7 +23,7 @@ rm -rf data/staging/jobs data/media
 python3 manage.py migrate
 ```
 
-필수 외부 프로세스: **Redis**(Celery), **Qdrant**(`QDRANT_URL`). 동영상 업로드 시 **ffmpeg** 권장.
+필수 외부 프로세스: **Redis**(Celery), **Qdrant**(`QDRANT_URL`). 프레임 추출·YouTube 가져오기(yt-dlp 병합)에 **ffmpeg** 사용 — 기본은 `imageio-ffmpeg` 동봉 바이너리, 필요 시 `FFMPEG_BIN`으로 시스템 ffmpeg 지정.
 
 | 변수 | 기본값 | 의미 |
 |------|--------|------|
@@ -57,6 +57,8 @@ python3 manage.py runserver
 - 잡 목록: http://localhost:8000/jobs/
 
 업로드 → `EmbeddingJob` 생성 → 스테이징 `data/staging/jobs/<uuid>/` → (준비되면) 자동 enqueue → worker가 ffmpeg·CLIP·Qdrant 처리.
+
+**YouTube URL** 업로드(`/upload/`)는 Celery가 `yt-dlp`로 `input/`에 받은 뒤 자동 enqueue합니다(영상·음성 스트림 병합에 위와 동일한 ffmpeg 설정). worker가 떠 있어야 하며, YouTube 이용약관·저작권은 운영자가 준수해야 합니다.
 
 runserver와 worker는 **같은 `ANIME_DATA_ROOT`** 를 써야 합니다.
 

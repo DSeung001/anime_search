@@ -14,6 +14,7 @@ class EmbeddingJob(models.Model):
     """
 
     class Status(models.TextChoices):
+        IMPORTING = "importing", "가져오는 중"
         PENDING = "pending", "대기"
         PROCESSING = "processing", "처리 중"
         DONE = "done", "완료"
@@ -63,6 +64,12 @@ class EmbeddingJob(models.Model):
         blank=True,
         default="",
         help_text="스테이징 input/ 동영상 파일명 (공개 검색 URL용)",
+    )
+    youtube_source_url = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="YouTube 가져오기 원본 URL (있을 때만)",
     )
 
     class Meta:

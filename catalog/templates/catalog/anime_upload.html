@@ -1,4 +1,5 @@
 {% extends "catalog/base.html" %}
+{% load static %}
 {% block title %}애니 업로드{% endblock %}
 {% block main %}
 <h1 class="page-title">애니 업로드 <span class="help-tip" tabindex="0" role="note" aria-label="시리즈(Anime)를 지정하고 장르를 연결한 뒤 동영상을 올리면 EmbeddingJob이 생성됩니다." data-tooltip="시리즈(Anime)를 지정하고 장르를 연결한 뒤 동영상을 올리면 EmbeddingJob이 생성됩니다.">?</span></h1>
@@ -30,21 +31,40 @@
       <label class="f">episode (화수, 필수)</label>
       <input type="number" name="episode" min="1" step="1" required placeholder="1">
     </div>
-    <div style="grid-column:1/-1;">
-      <label class="f">동영상 (선택)</label>
-      <div id="video-picker" class="video-picker" data-state="empty">
-        <input id="video-input" class="video-picker-input" type="file" name="video" accept=".mp4,.mkv,.webm,.mov,.avi,.m4v,video/*">
-        <div id="video-drop" class="drop video-picker-drop">
-          <strong id="video-drop-label">파일 선택</strong>
-          <span id="video-drop-hint">또는 여기로 드래그</span>
+    <div id="source-pair" class="source-pair">
+      <div class="source-pair-head">
+        <p class="hint">동영상 소스는 <strong>하나만</strong> 선택하세요.</p>
+        <button type="button" id="source-clear-btn" class="source-clear-btn" hidden aria-label="YouTube URL과 파일 선택 초기화">
+          <span class="source-clear-icon" aria-hidden="true">🧹</span>
+          <span>청소하기</span>
+        </button>
+      </div>
+      <div class="source-pair-grid">
+        <div id="source-pane-youtube" class="source-pane">
+          <span class="source-pane-label">YouTube URL</span>
+          <input id="youtube-url-input" type="url" name="youtube_url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" style="width:100%;">
+          <p class="hint" style="margin:0.45rem 0 0;font-size:0.8rem;">Celery worker가 가져옵니다.</p>
         </div>
-        <div id="video-file-picked" class="file-picked video-picker-picked">
-          <span class="file-picked-badge">선택됨</span>
-          <span id="video-file-name" class="file-picked-name"></span>
-          <span id="video-file-meta" class="file-picked-meta"></span>
-          <button type="button" id="video-file-clear" class="btn btn-ghost file-picked-clear">선택 해제</button>
+        <div id="source-pane-file" class="source-pane">
+          <span class="source-pane-label">동영상 파일</span>
+          <div id="video-picker" class="video-picker" data-state="empty">
+            <input id="video-input" class="video-picker-input" type="file" name="video" accept=".mp4,.mkv,.webm,.mov,.avi,.m4v,video/*">
+            <div id="video-drop" class="drop video-picker-drop">
+              <strong id="video-drop-label">파일 선택</strong>
+              <span id="video-drop-hint">또는 여기로 드래그</span>
+            </div>
+            <div id="video-file-picked" class="file-picked video-picker-picked">
+              <span class="file-picked-badge">선택됨</span>
+              <span id="video-file-name" class="file-picked-name"></span>
+              <span id="video-file-meta" class="file-picked-meta"></span>
+            </div>
+          </div>
         </div>
       </div>
+    </div>
+    <div id="import-progress-wrap" class="upload-progress-wrap" hidden style="grid-column:1/-1;">
+      <label class="f">YouTube 가져오기</label>
+      <p id="import-progress-label" class="hint" style="margin:0;">가져오는 중…</p>
     </div>
     <div id="upload-progress-wrap" class="upload-progress-wrap" hidden style="grid-column:1/-1;">
       <label class="f">업로드</label>
@@ -68,120 +88,7 @@
   <p class="hint" style="margin-top:0.75rem;">잡 처리를 시작하면 스테이징 동영상이 삭제되어 미리보기가 사라질 수 있습니다.</p>
 </section>
 
-<script>
-(function () {
-  const ALLOWED_EXT = [".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"];
-  const form = document.getElementById("upload-form");
-  const videoPicker = document.getElementById("video-picker");
-  const videoInput = document.getElementById("video-input");
-  const filePicked = document.getElementById("video-file-picked");
-  const fileNameEl = document.getElementById("video-file-name");
-  const fileMetaEl = document.getElementById("video-file-meta");
-  const fileClearBtn = document.getElementById("video-file-clear");
-  const progressWrap = document.getElementById("upload-progress-wrap");
-  const progressBar = document.getElementById("upload-progress-bar");
-  const progressLabel = document.getElementById("upload-progress-label");
-  const progressTrack = progressWrap.querySelector(".progress-track");
-  const submitBtn = document.getElementById("upload-submit");
-  const resultSection = document.getElementById("upload-result");
-  const resultMsg = document.getElementById("upload-result-msg");
-  const resultId = document.getElementById("upload-result-id");
-  const preview = document.getElementById("upload-preview");
-
-  function setProgress(pct) {
-    const v = Math.max(0, Math.min(100, pct));
-    progressBar.style.width = v + "%";
-    progressLabel.textContent = Math.round(v) + "%";
-    progressTrack.setAttribute("aria-valuenow", String(Math.round(v)));
-  }
-
-  function formatBytes(n) {
-    if (n < 1024) return n + " B";
-    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
-    return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-  }
-
-  function extOf(name) {
-    const i = name.lastIndexOf(".");
-    return i >= 0 ? name.slice(i).toLowerCase() : "";
-  }
-
-  function updateVideoPickUI() {
-    const file = videoInput.files && videoInput.files[0];
-    if (!file) {
-      videoPicker.dataset.state = "empty";
-      filePicked.classList.remove("file-picked--warn");
-      fileNameEl.textContent = "";
-      fileMetaEl.textContent = "";
-      return;
-    }
-    const ext = extOf(file.name);
-    const ok = ALLOWED_EXT.indexOf(ext) >= 0;
-    videoPicker.dataset.state = "picked";
-    fileNameEl.textContent = file.name;
-    fileMetaEl.textContent = formatBytes(file.size) + (ok ? "" : " · 지원하지 않는 확장자");
-    filePicked.classList.toggle("file-picked--warn", !ok);
-  }
-
-  videoInput.addEventListener("change", updateVideoPickUI);
-  fileClearBtn.addEventListener("click", function () {
-    videoInput.value = "";
-    updateVideoPickUI();
-  });
-
-  form.addEventListener("submit", function (ev) {
-    ev.preventDefault();
-    const fd = new FormData(form);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", form.action);
-    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-    xhr.setRequestHeader("Accept", "application/json");
-
-    progressWrap.hidden = false;
-    setProgress(0);
-    submitBtn.disabled = true;
-
-    xhr.upload.addEventListener("progress", function (e) {
-      if (e.lengthComputable) {
-        setProgress((e.loaded / e.total) * 100);
-      }
-    });
-
-    xhr.addEventListener("load", function () {
-      submitBtn.disabled = false;
-      let data;
-      try {
-        data = JSON.parse(xhr.responseText);
-      } catch (_) {
-        alert("서버 응답을 해석할 수 없습니다.");
-        return;
-      }
-      if (xhr.status >= 400) {
-        alert(data.detail || data.message || "업로드 실패");
-        return;
-      }
-      setProgress(100);
-      resultSection.hidden = false;
-      resultMsg.textContent = data.message || "작업이 생성되었습니다.";
-      resultId.textContent = data.public_id || "";
-      if (data.preview_url) {
-        preview.hidden = false;
-        preview.src = data.preview_url;
-      } else {
-        preview.hidden = true;
-        preview.removeAttribute("src");
-      }
-      resultSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-
-    xhr.addEventListener("error", function () {
-      submitBtn.disabled = false;
-      alert("네트워크 오류로 업로드에 실패했습니다.");
-    });
-
-    xhr.send(fd);
-  });
-})();
-</script>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'catalog/anime_upload.js' %}"></script>
 {% endblock %}

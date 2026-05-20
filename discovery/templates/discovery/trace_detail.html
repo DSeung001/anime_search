@@ -1,0 +1,38 @@
+{% extends "catalog/base.html" %}
+
+{% block title %}Trace {{ trace.id }}{% endblock %}
+
+{% block main %}
+<h1 class="page-title">Trace 상세</h1>
+<p class="lead">
+  <strong>{{ trace.kind }}</strong> · {{ trace.status }} · {{ trace.created_at }}
+</p>
+<p><code>{{ trace.summary }}</code></p>
+<ul>
+  <li>trace_id: <code>{{ trace.id }}</code></li>
+  {% if trace.session_id %}
+  <li>session: <code>{{ trace.session_id }}</code></li>
+  {% endif %}
+  {% if trace.job_public_id %}
+  <li>job: <code>{{ trace.job_public_id }}</code></li>
+  {% endif %}
+</ul>
+
+<h2>단계</h2>
+{% for stage in stages %}
+<details style="margin-bottom: 0.5rem;" {% if forloop.first %}open{% endif %}>
+  <summary><strong>{{ stage.name }}</strong></summary>
+  <pre style="white-space: pre-wrap; font-size: 0.85rem; overflow: auto;">{{ stage.data_pretty }}</pre>
+</details>
+{% empty %}
+<p>단계 데이터 없음</p>
+{% endfor %}
+
+<h2>전체 payload</h2>
+<pre style="white-space: pre-wrap; font-size: 0.8rem; overflow: auto; max-height: 40rem;">{{ payload_pretty }}</pre>
+
+<p style="margin-top:1rem;">
+  <a href="{% url 'discovery_trace_list' %}">목록</a>
+  · <a href="{% url 'discovery_search' %}">검색</a>
+</p>
+{% endblock %}

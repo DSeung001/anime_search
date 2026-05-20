@@ -29,8 +29,13 @@ requirements.txt.lock
 .AppleDouble
 .LSOverride
 
+### 설정
 .env
 
+
+### 모델
 anime_indexing/weights/
-# 또는
 anime_indexing/weights/*
+
+### qdarnt 마운트
+qdrant_storage/*

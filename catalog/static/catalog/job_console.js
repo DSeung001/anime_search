@@ -5,7 +5,7 @@
   var BACKOFF_INITIAL_MS = 1000;
   var BACKOFF_MAX_MS = 30000;
   var MAX_POLL_FAILURES = 3;
-  var ACTIVE_STATUSES = { pending: true, processing: true };
+  var ACTIVE_STATUSES = { importing: true, pending: true, processing: true };
 
   var root = document.getElementById("job-console-root");
   if (!root) return;
@@ -16,6 +16,7 @@
   var csrfToken = root.getAttribute("data-csrf-token");
 
   var statusLabels = {
+    importing: "가져오는 중",
     pending: "대기",
     processing: "처리 중",
     done: "완료",
@@ -98,11 +99,13 @@
       "job-row--failed",
       "job-row--processing",
       "job-row--done",
-      "job-row--pending"
+      "job-row--pending",
+      "job-row--importing"
     );
     if (status === "failed") row.classList.add("job-row--failed");
     else if (status === "processing") row.classList.add("job-row--processing");
     else if (status === "done") row.classList.add("job-row--done");
+    else if (status === "importing") row.classList.add("job-row--importing");
     else if (status === "pending") row.classList.add("job-row--pending");
 
     var badge = row.querySelector(".job-status-badge");

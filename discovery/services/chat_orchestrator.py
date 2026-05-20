@@ -9,14 +9,15 @@ from django.http import HttpRequest
 from google import genai
 from google.genai import types
 
+from anime_indexing.observability.pipeline_tracer import PipelineTracer
 from discovery.models import ChatMessage, ChatSession
-from discovery.services.presenter import present_scenes
 from discovery.services.retrieval import SearchPipelineError, run_scene_search
 
 SYSTEM_PROMPT = """당신은 애니메이션 장면 검색 도우미입니다.
 - 사용자와 한국어로 대화합니다.
 - 장면을 찾아야 할 때 search_scenes 도구를 호출하세요.
-- search_query에는 잡담을 빼고 시각적으로 그릴 수 있는 장면만 1~2문장으로 적으세요.
+- search_query에는 잡담을 빼고 시각적으로 그릴 수 있는 장면만 한국어로 1~2문장 적으세요.
+- CLIP 검색용 영어 변환은 서버 파이프라인에서 처리합니다. search_query는 한국어 시각 묘사만 넣으세요.
 - 도구 결과에 없는 타임스탬프·URL·제목을 만들지 마세요.
 """
 
@@ -65,10 +66,26 @@ def _function_call_args(fc: types.FunctionCall) -> dict[str, Any]:
     return dict(raw)
 
 
-def _execute_search_scenes(args: dict[str, Any], request: HttpRequest) -> tuple[str, list[dict[str, Any]]]:
+def _search_trace_status(scenes: list[dict[str, Any]]) -> str:
+    if scenes:
+        return "ok"
+    return "empty"
+
+
+def _execute_search_scenes(
+    args: dict[str, Any],
+    request: HttpRequest,
+    *,
+    session: ChatSession,
+) -> tuple[str, list[dict[str, Any]], str, str, UUID | None]:
     search_query = (args.get("search_query") or "").strip()
+    tracer = PipelineTracer.start_search(session_id=session.id)
+    trace_id = tracer.trace_id
+
     if not search_query:
-        return json.dumps({"error": "search_query required"}, ensure_ascii=False), []
+        tracer.stage("error", message="search_query required")
+        tracer.finish(status="error", summary="search_query required")
+        return json.dumps({"error": "search_query required"}, ensure_ascii=False), [], "", "", trace_id
 
     anime_slug = (args.get("anime_id") or "").strip() or None
     ep_raw = args.get("episode")
@@ -85,17 +102,38 @@ def _execute_search_scenes(args: dict[str, Any], request: HttpRequest) -> tuple[
         gs = [str(x).strip() for x in gs_raw if str(x).strip()]
 
     try:
-        segments = run_scene_search(
+        clip_query, scenes = run_scene_search(
             search_query=search_query,
             anime_slug=anime_slug,
             episode=ep,
             genre_slugs=gs,
+            tracer=tracer,
+            request=request,
         )
     except SearchPipelineError as exc:
-        return json.dumps({"error": str(exc)}, ensure_ascii=False), []
+        error_msg = str(exc)
+        tracer.stage("pipeline_error", message=error_msg)
+        tracer.finish(status="error", summary=error_msg[:512])
+        return (
+            json.dumps({"error": error_msg}, ensure_ascii=False),
+            [],
+            search_query,
+            search_query,
+            trace_id,
+        )
 
-    scenes = present_scenes(segments, request)
-    return json.dumps({"count": len(scenes), "scenes": scenes}, ensure_ascii=False), scenes
+    tracer.finish(
+        status=_search_trace_status(scenes),
+        summary=f"scenes={len(scenes)} ko={search_query[:80]}",
+    )
+    payload = {
+        "count": len(scenes),
+        "scenes": scenes,
+        "search_query_ko": search_query,
+        "search_query_en": clip_query,
+        "trace_id": str(trace_id),
+    }
+    return json.dumps(payload, ensure_ascii=False), scenes, search_query, clip_query, trace_id
 
 
 def _build_user_prompt(session: ChatSession, user_message: str) -> str:
@@ -143,6 +181,7 @@ def run_chat_turn(
     )
 
     scenes: list[dict[str, Any]] = []
+    searched = False
     contents: list[types.Content] = [user_content]
     response = client.models.generate_content(
         model=model,
@@ -163,14 +202,25 @@ def run_chat_turn(
         for fc in fn_calls:
             if fc.name != "search_scenes":
                 continue
+            searched = True
             args = _function_call_args(fc)
-            tool_json, scenes = _execute_search_scenes(args, request)
+            tool_json, scenes, query_ko, query_en, trace_id = _execute_search_scenes(
+                args, request, session=session
+            )
+            tool_payload: dict[str, Any] = {
+                "scenes": scenes,
+                "args": args,
+                "search_query_ko": query_ko,
+                "search_query_en": query_en,
+            }
+            if trace_id:
+                tool_payload["trace_id"] = str(trace_id)
             ChatMessage.objects.create(
                 session=session,
                 role=ChatMessage.Role.TOOL,
                 content=tool_json[:8000],
                 tool_name="search_scenes",
-                tool_payload={"scenes": scenes, "args": args},
+                tool_payload=tool_payload,
             )
             tool_response_parts.append(
                 types.Part.from_function_response(
@@ -192,6 +242,11 @@ def run_chat_turn(
             contents=contents,
             config=_GENERATE_CONFIG,
         )
+
+    if not searched:
+        no_tool_tracer = PipelineTracer.start_search(session_id=session.id)
+        no_tool_tracer.stage("gemini_no_tool", user_message_preview=user_message[:300])
+        no_tool_tracer.finish(status="empty", summary="gemini_no_tool")
 
     reply_text = (response.text or "").strip()
     if not reply_text:

@@ -24,3 +24,6 @@ imageio-ffmpeg>=0.5
 
 # Discovery 채팅 (Gemini — google.genai SDK)
 google-genai>=1.0
+
+# YouTube → 스테이징 input/ (업로드 MVP)
+yt-dlp>=2024.1

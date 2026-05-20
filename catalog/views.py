@@ -23,6 +23,8 @@ from anime_indexing.video.extract import VIDEO_EXTENSIONS
 
 from catalog.models import Anime, Genre
 from catalog.services.episode import get_or_create_episode
+from catalog.services.youtube_import import normalize_youtube_url
+from catalog.tasks import import_youtube_video_task
 from catalog.services.genre_bulk import bulk_create_genres
 from catalog.services.genre_slug import unique_genre_slug
 from catalog.services.label_ko import parse_label_ko_bulk
@@ -75,6 +77,47 @@ def _video_preview_url(request: HttpRequest, job: EmbeddingJob, filename: str) -
             "catalog_job_video_preview",
             kwargs={"public_id": job.public_id, "filename": filename},
         )
+    )
+
+
+def _upload_form_error(request: HttpRequest, msg: str, *, status: int = 400) -> HttpResponse:
+    if _wants_json(request):
+        return JsonResponse({"detail": msg}, status=status)
+    messages.error(request, msg)
+    return redirect("catalog_anime_upload")
+
+
+def _upload_job_message(job: EmbeddingJob, *, dest_name: str | None, had_youtube: bool) -> str:
+    if had_youtube:
+        return f"작업 생성됨 · {job.public_id} · YouTube에서 가져오는 중…"
+    if dest_name:
+        return f"작업 생성됨 · {job.public_id} · 동영상 저장됨 · 처리 큐에 넣는 중"
+    return (
+        f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣은 뒤 "
+        f"/jobs/ 에서 실행하세요"
+    )
+
+
+def _upload_json_response(
+    request: HttpRequest,
+    job: EmbeddingJob,
+    *,
+    dest_name: str | None,
+    had_youtube: bool,
+) -> JsonResponse:
+    return JsonResponse(
+        {
+            "public_id": str(job.public_id),
+            "status": job.status,
+            "filename": dest_name,
+            "preview_url": _video_preview_url(request, job, dest_name) if dest_name else None,
+            "jobs_url": request.build_absolute_uri(reverse("catalog_jobs")),
+            "poll_url": request.build_absolute_uri(
+                reverse("catalog_job_api_detail", kwargs={"public_id": job.public_id})
+            ),
+            "youtube_source_url": job.youtube_source_url or None,
+            "message": _upload_job_message(job, dest_name=dest_name, had_youtube=had_youtube),
+        }
     )
 
 
@@ -213,11 +256,9 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
         slug = (request.POST.get("anime_slug") or "").strip()
         # slug 유효성 검사
         if not is_valid_anime_id(slug):
-            msg = "시리즈 slug는 영문·숫자·_- 만 1~255자여야 합니다."
-            if _wants_json(request):
-                return JsonResponse({"detail": msg}, status=400)
-            messages.error(request, msg)
-            return redirect("catalog_anime_upload")
+            return _upload_form_error(
+                request, "시리즈 slug는 영문·숫자·_- 만 1~255자여야 합니다."
+            )
 
         # 애니메이션이 없으면 새로 만들고 있으면 그대로 사용
         title = (request.POST.get("title") or "").strip()
@@ -234,40 +275,53 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
         # 에피소드 유효성 검사
         ep_raw = (request.POST.get("episode") or "").strip()
         if not ep_raw:
-            msg = "episode(화수)는 필수입니다."
-            if _wants_json(request):
-                return JsonResponse({"detail": msg}, status=400)
-            messages.error(request, msg)
-            return redirect("catalog_anime_upload")
+            return _upload_form_error(request, "episode(화수)는 필수입니다.")
         try:
             episode_number = int(ep_raw)
             if episode_number < 1:
                 raise ValueError
         except ValueError:
-            msg = "episode는 1 이상 정수여야 합니다."
-            if _wants_json(request):
-                return JsonResponse({"detail": msg}, status=400)
-            messages.error(request, msg)
-            return redirect("catalog_anime_upload")
+            return _upload_form_error(request, "episode는 1 이상 정수여야 합니다.")
+
+        youtube_url = (request.POST.get("youtube_url") or "").strip()
+        f = request.FILES.get("video")
+        if youtube_url and f:
+            return _upload_form_error(
+                request, "동영상 파일과 YouTube URL 중 하나만 지정하세요."
+            )
+
+        if youtube_url:
+            try:
+                youtube_url = normalize_youtube_url(youtube_url)
+            except ValueError as exc:
+                return _upload_form_error(request, str(exc))
 
         episode_row = get_or_create_episode(anime=anime, number=episode_number)
-        # Job 생성(anime·episode FK로 연결)
-        job = EmbeddingJob.objects.create(anime=anime, episode=episode_row)
+        job = EmbeddingJob.objects.create(
+            anime=anime,
+            episode=episode_row,
+            status=(
+                EmbeddingJob.Status.IMPORTING
+                if youtube_url
+                else EmbeddingJob.Status.PENDING
+            ),
+            youtube_source_url=youtube_url,
+        )
         # 잡 스테이징 디렉터리(jobs/<id>/frames, input/) 생성
         frames_leaf = ensure_job_staging_dirs(job)
         input_dir = staging_input_dir_for_job_frames(frames_leaf)
 
         dest_name: str | None = None
-        f = request.FILES.get("video")
-        if f:
+        if youtube_url:
+            async_result = import_youtube_video_task.delay(str(job.public_id), youtube_url)
+            job.celery_task_id = str(async_result.id)
+            job.save(update_fields=["celery_task_id", "updated_at"])
+        elif f:
             try:
                 dest_name = _safe_video_name(f.name)
             except ValueError as exc:
                 job.delete()
-                if _wants_json(request):
-                    return JsonResponse({"detail": str(exc)}, status=400)
-                messages.error(request, str(exc))
-                return redirect("catalog_anime_upload")
+                return _upload_form_error(request, str(exc))
             # pathlib로 경로 조합(문자열 split/join 대신)
             dest = input_dir / dest_name
             with dest.open("wb") as out:
@@ -277,36 +331,21 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
                 job.source_video_filename = dest_name
                 job.save(update_fields=["source_video_filename", "updated_at"])
 
-        # TODO: DB·파일 저장을 transaction.atomic() 등으로 묶기
-        # DB 커밋 후 Celery enqueue 예약(on_commit; atomic 블록 안이면 즉시 실행)
-        schedule_auto_enqueue_on_commit(job.public_id)
+            # TODO: DB·파일 저장을 transaction.atomic() 등으로 묶기
+            schedule_auto_enqueue_on_commit(job.public_id)
 
         if _wants_json(request):
-            payload: dict[str, str | None] = {
-                "public_id": str(job.public_id),
-                "filename": dest_name,
-                "preview_url": _video_preview_url(request, job, dest_name) if dest_name else None,
-                "jobs_url": request.build_absolute_uri(reverse("catalog_jobs")),
-            }
-            if dest_name:
-                payload["message"] = f"작업 생성됨 · {job.public_id} · 동영상 저장됨 · 처리 큐에 넣는 중"
-            else:
-                payload["message"] = (
-                    f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣은 뒤 "
-                    f"/jobs/ 에서 실행하세요"
-                )
-            return JsonResponse(payload)
+            return _upload_json_response(
+                request,
+                job,
+                dest_name=dest_name,
+                had_youtube=bool(youtube_url),
+            )
 
-        if dest_name:
-            messages.success(
-                request,
-                f"작업 생성됨 · {job.public_id} · 동영상 저장됨 · 처리 큐에 넣는 중",
-            )
-        else:
-            messages.success(
-                request,
-                f"작업 생성됨 · {job.public_id} · input 폴더에 동영상을 넣은 뒤 /jobs/ 에서 실행하세요",
-            )
+        messages.success(
+            request,
+            _upload_job_message(job, dest_name=dest_name, had_youtube=bool(youtube_url)),
+        )
         return redirect("catalog_jobs")
 
     # 업로드 페이지 보여주기
@@ -317,7 +356,15 @@ def anime_upload(request: HttpRequest) -> HttpResponse:
     )
 
 
-def _job_status_payload(job: EmbeddingJob) -> dict[str, str | None]:
+def _job_status_payload(
+    job: EmbeddingJob,
+    *,
+    request: HttpRequest | None = None,
+) -> dict[str, str | int | None]:
+    filename = job.source_video_filename or None
+    preview_url: str | None = None
+    if filename and request is not None:
+        preview_url = _video_preview_url(request, job, filename)
     return {
         "public_id": str(job.public_id),
         "anime_id": job.anime.slug,
@@ -330,6 +377,9 @@ def _job_status_payload(job: EmbeddingJob) -> dict[str, str | None]:
         "episode": job.episode.number,
         "episode_id": job.episode_id,
         "celery_task_id": job.celery_task_id or "",
+        "source_video_filename": filename,
+        "youtube_source_url": job.youtube_source_url or None,
+        "preview_url": preview_url,
     }
 
 
@@ -339,7 +389,19 @@ def job_api_list(request: HttpRequest) -> HttpResponse:
     if gate:
         return gate
     jobs = EmbeddingJob.objects.select_related("anime", "episode").order_by("-created_at")[:80]
-    return JsonResponse({"jobs": [_job_status_payload(j) for j in jobs]})
+    return JsonResponse({"jobs": [_job_status_payload(j, request=request) for j in jobs]})
+
+
+@require_GET
+def job_api_detail(request: HttpRequest, public_id: UUID) -> HttpResponse:
+    gate = _ui_gate(request)
+    if gate:
+        return gate
+    job = get_object_or_404(
+        EmbeddingJob.objects.select_related("anime", "episode"),
+        public_id=public_id,
+    )
+    return JsonResponse(_job_status_payload(job, request=request))
 
 
 @require_POST
