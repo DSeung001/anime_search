@@ -12,8 +12,8 @@ from anime_indexing.paths import anime_staging_root, ensure_dir
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
-from embeddings.test_utils import make_job
 from embeddings.services.job_delete import JobDeleteError, delete_embedding_job
+from embeddings.tests.utils import make_job
 
 
 class JobDeleteServiceTests(TestCase):
@@ -54,6 +54,7 @@ class JobDeleteServiceTests(TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertTrue(EmbeddingJob.objects.filter(pk=job.pk).exists())
 
+    @override_settings(DISCOVERY_PROTECT_DONE_JOBS=False)
     def test_delete_done_keeps_staging_until_deleted(self) -> None:
         job = make_job(
             self.anime,

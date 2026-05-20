@@ -6,12 +6,12 @@ from django.test import TestCase, TransactionTestCase, override_settings
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
-from embeddings.test_utils import make_job, staging_with_jpg, staging_with_video
 from embeddings.services.job_auto_enqueue import (
     schedule_auto_enqueue_on_commit,
     try_auto_enqueue_job,
 )
 from embeddings.services.job_staging import ensure_job_staging_dirs
+from embeddings.tests.utils import make_job, staging_with_jpg, staging_with_video
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True)

@@ -6,10 +6,10 @@ from uuid import uuid4
 
 from django.test import TestCase, override_settings
 
+from catalog.models import Anime
 from catalog.tasks import import_youtube_video_task
 from embeddings.models import EmbeddingJob
-from catalog.models import Anime
-from embeddings.test_utils import make_job
+from embeddings.tests.utils import make_job
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True)

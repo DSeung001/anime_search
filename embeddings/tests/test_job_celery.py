@@ -9,11 +9,11 @@ from anime_indexing.paths import staging_frames_leaf, staging_input_dir_for_job_
 
 from catalog.models import Anime
 from embeddings.models import EmbeddingJob
-from embeddings.test_utils import make_job, staging_with_jpg, staging_with_video
 from embeddings.services.job_dispatch import JobDispatchError, enqueue_run_job
 from embeddings.services.job_preflight import check_job_input_video
 from embeddings.services.job_staging import ensure_job_staging_dirs
 from embeddings.tasks import run_embedding_job_task
+from embeddings.tests.utils import make_job, staging_with_jpg, staging_with_video
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
