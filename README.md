@@ -2,6 +2,8 @@
 
 애니메이션 프레임 CLIP 임베딩·벡터 검색 (Django + Qdrant). 검색(RAG)은 **Qdrant 벡터**만 사용하며, 프레임 JPG는 **스테이징**에만 둡니다.
 
+https://dseung001.github.io/posts/2026/05/10/10/
+
 ## Setup
 
 ```bash
@@ -64,14 +66,3 @@ python3 manage.py runserver
 **YouTube URL** 업로드(`/upload/`)는 Celery가 `yt-dlp`로 `input/`에 받은 뒤 자동 enqueue합니다(영상·음성 스트림 병합에 위와 동일한 ffmpeg 설정). worker가 떠 있어야 하며, YouTube 이용약관·저작권은 운영자가 준수해야 합니다.
 
 runserver와 worker는 **같은 `ANIME_DATA_ROOT`** 를 써야 합니다.
-
-## Trade-offs
-
-| 방식 | 장점 | 단점 |
-|------|------|------|
-| **스테이징만** (현재) | RAG에 충분, 재추출·동영상 미리보기 가능, 화별 media 덮어쓰기 없음 | `data/staging/jobs/` 용량 증가 — DONE 잡은 주기적 삭제 권장 |
-| (과거) media 승격 | 화별 고정 캐논 경로 | 디스크 이중화, 승격 시 스테이징 삭제로 preview 소실 |
-
-디스크 레이아웃: `data/staging/jobs/<job-uuid>/input/` (동영상), `.../frames/` (JPG). 잡 삭제 시 해당 UUID 폴더 전체 삭제.
-
-macOS Celery·GPU 이슈: [docs/celery-macos-mps-agxmetal.md](docs/celery-macos-mps-agxmetal.md)
